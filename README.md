@@ -25,9 +25,10 @@ falls back to the original game data and can be resumed by rerunning the command
 - Save anywhere. (In the original its only possible to save in map choices). Added more save slots
 - Skip button with option to only skip already read text.
 - Better shortcuts (original only has left click to advance text).
-- TODO: text speed slider, textbox transparency slider/color
+- Text speed slider, textbox transparency slider. TODO: color, font selector
 - Needs testing: Glow the ghost icon when enabled.
 - TODO: Auto walkthrough for the four main endings
+- Added a complete walkthrough of the game, original base taken from: https://web.archive.org/web/20021212073805/http://www5.ocn.ne.jp:80/~misaki-b/kouryaku/lien.htm
 
 ## Run
 
@@ -95,6 +96,9 @@ python3 -m unittest discover -s tests -v
 - Implements the original map-selection handlers: available character chips,
   resolution-independent hit regions, destination-plate hover callbacks, and
   click routing all come from the original scenario instructions.
+- Restores the original timed scene fades and the `CARD.GGD` tiled map
+  transition (`UZU3` cover followed by the `UZU2` reveal) instead of collapsing
+  their scripted frames into an immediate background swap.
 - Implements the original browser-global route/completion flag bank. These
   monotonic unlocks are merged across manual slots, new games, backlog jumps,
   and portable save-data transfers so an older save cannot relock progress.

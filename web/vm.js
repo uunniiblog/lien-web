@@ -102,6 +102,8 @@ export class LienVM {
     this.playEffect = options.playEffect || (() => {});
     this.stopEffects = options.stopEffects || (() => {});
     this.onTrace = options.onTrace || (() => {});
+    this.onTransition = options.onTransition || (() => {});
+    this.onTransitionFrame = options.onTransitionFrame || (() => {});
     this.getExternalState = options.getExternalState || (() => ({}));
 
     this.scenarios = new Map();
@@ -138,6 +140,7 @@ export class LienVM {
     this.effectName = 'YUS_01.wav';
     this.voiceCompletion = Promise.resolve();
     this.waitForVoice = false;
+    this.skipNextFadeOut = false;
     this.migrations = [];
     const cleanView = this.surface(CLEAN_VIEW_SURFACE);
     cleanView.getContext('2d').fillRect(0, 0, cleanView.width, cleanView.height);
@@ -337,6 +340,234 @@ export class LienVM {
     this.context.drawImage(display, 0, 0);
   }
 
+  canvasCopy(source) {
+    const copy = document.createElement('canvas');
+    copy.width = source.width;
+    copy.height = source.height;
+    copy.getContext('2d').drawImage(source, 0, 0);
+    return copy;
+  }
+
+  seedDisplay(display = this.stage) {
+    const destination = this.surface(0);
+    const target = destination.getContext('2d');
+    target.clearRect(0, 0, destination.width, destination.height);
+    target.drawImage(
+      display, 0, 0, display.width, display.height,
+      0, 0, destination.width, destination.height,
+    );
+    this.markSurfaceDirty(0);
+    const cleanView = this.surface(CLEAN_VIEW_SURFACE, destination.width, destination.height);
+    cleanView.width = destination.width;
+    cleanView.height = destination.height;
+    cleanView.getContext('2d').drawImage(destination, 0, 0);
+    this.markSurfaceDirty(CLEAN_VIEW_SURFACE);
+  }
+
+  async animate(duration, draw) {
+    const milliseconds = Math.max(0, Math.min(10000, Number(duration) || 0));
+    if (!milliseconds) {
+      draw(1);
+      return { elapsed: 0, frames: 1, maxFrameGap: 0 };
+    }
+    // Establish the first frame before yielding. Otherwise the browser can
+    // briefly paint a surface prepared by the script between two transitions.
+    draw(0);
+    const started = performance.now();
+    let previous = started;
+    let frames = 1;
+    let maxFrameGap = 0;
+    await new Promise(resolve => {
+      const frame = now => {
+        maxFrameGap = Math.max(maxFrameGap, now - previous);
+        previous = now;
+        frames += 1;
+        const progress = Math.min(1, (now - started) / milliseconds);
+        draw(progress);
+        if (progress >= 1) resolve();
+        else requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    });
+    return {
+      elapsed: performance.now() - started,
+      frames,
+      maxFrameGap,
+    };
+  }
+
+  async preloadFollowingTransitionAssets(frame) {
+    const names = [];
+    for (let index = frame.ip; index < frame.scenario.operations.length; index += 1) {
+      const operation = frame.scenario.operations[index];
+      if (operation.opcode === 0x57
+          && Number.parseInt(operation.dataHex.slice(0, 2), 16) === 0x13) break;
+      if (operation.opcode === 0x56 && operation.text) names.push(`${operation.text}.GGD`);
+      // Keep look-ahead local to the current visual handoff.
+      if (index - frame.ip >= 128) break;
+    }
+    const unique = [...new Set(names)];
+    if (!unique.length) return { assets: [], elapsed: 0, failed: [] };
+    const started = performance.now();
+    this.onTransition({ phase: 'preload-start', assets: unique });
+    const results = await Promise.allSettled(unique.map(name => this.fetchImage(name)));
+    const failed = results.flatMap((result, index) => result.status === 'rejected'
+      ? [{ asset: unique[index], error: String(result.reason) }]
+      : []);
+    const detail = { assets: unique, elapsed: performance.now() - started, failed };
+    this.onTransition({ phase: 'preload-end', ...detail });
+    return detail;
+  }
+
+  async fadeDisplayToBlack(duration = 500) {
+    const destination = this.surface(0);
+    const original = this.canvasCopy(destination);
+    const target = destination.getContext('2d');
+    await this.animate(duration, progress => {
+      target.clearRect(0, 0, destination.width, destination.height);
+      target.drawImage(original, 0, 0);
+      target.fillStyle = `rgba(0,0,0,${progress})`;
+      target.fillRect(0, 0, destination.width, destination.height);
+      this.present();
+    });
+    target.fillStyle = '#000';
+    target.fillRect(0, 0, destination.width, destination.height);
+    this.markSurfaceDirty(0);
+    this.present();
+  }
+
+  async revealDisplayFromBlack(duration = 500) {
+    const destination = this.surface(0);
+    const finalFrame = this.canvasCopy(destination);
+    const target = destination.getContext('2d');
+    await this.animate(duration, progress => {
+      target.clearRect(0, 0, destination.width, destination.height);
+      target.fillStyle = '#000';
+      target.fillRect(0, 0, destination.width, destination.height);
+      target.globalAlpha = progress;
+      target.drawImage(finalFrame, 0, 0);
+      target.globalAlpha = 1;
+      this.present();
+    });
+    target.clearRect(0, 0, destination.width, destination.height);
+    target.drawImage(finalFrame, 0, 0);
+    this.markSurfaceDirty(0);
+    this.present();
+  }
+
+  async fadeOut(data, frame, operation) {
+    const duration = this.value(data, 0);
+    const red = data[4] ?? 0;
+    const green = data[5] ?? 0;
+    const blue = data[6] ?? 0;
+    const destination = this.surface(0);
+    const original = this.canvasCopy(destination);
+    const target = destination.getContext('2d');
+    if (this.skipNextFadeOut) {
+      this.skipNextFadeOut = false;
+      target.fillStyle = `rgb(${red},${green},${blue})`;
+      target.fillRect(0, 0, destination.width, destination.height);
+      this.markSurfaceDirty(0);
+      const cleanView = this.surface(CLEAN_VIEW_SURFACE, destination.width, destination.height);
+      cleanView.getContext('2d').drawImage(destination, 0, 0);
+      this.markSurfaceDirty(CLEAN_VIEW_SURFACE);
+      this.present();
+      this.onTransition({
+        phase: 'skipped',
+        kind: 'fade-out',
+        scenario: frame.scenario.name,
+        offset: operation.offset,
+        duration,
+        reason: 'browser handoff already faded to black',
+      });
+      return;
+    }
+    const preload = await this.preloadFollowingTransitionAssets(frame);
+    const diagnostic = {
+      phase: 'start',
+      kind: 'fade-out',
+      scenario: frame.scenario.name,
+      offset: operation.offset,
+      duration,
+      preload,
+    };
+    this.onTransition(diagnostic);
+    const timing = await this.animate(duration, progress => {
+      target.clearRect(0, 0, destination.width, destination.height);
+      target.drawImage(original, 0, 0);
+      target.fillStyle = `rgba(${red},${green},${blue},${progress})`;
+      target.fillRect(0, 0, destination.width, destination.height);
+      this.present();
+    });
+    target.fillStyle = `rgb(${red},${green},${blue})`;
+    target.fillRect(0, 0, destination.width, destination.height);
+    this.markSurfaceDirty(0);
+    const cleanView = this.surface(CLEAN_VIEW_SURFACE, destination.width, destination.height);
+    cleanView.getContext('2d').drawImage(destination, 0, 0);
+    this.markSurfaceDirty(CLEAN_VIEW_SURFACE);
+    this.present();
+    this.onTransition({ ...diagnostic, phase: 'end', timing });
+  }
+
+  async transitionCopy(data, frame, operation) {
+    const sourceIndex = this.value(data, 1);
+    const sourceX = this.value(data, 5);
+    const sourceY = this.value(data, 9);
+    const width = this.value(data, 13);
+    const height = this.value(data, 17);
+    const duration = this.value(data, 21);
+    const destinationX = this.value(data, 25);
+    const destinationY = this.value(data, 29);
+    if (width <= 0 || height <= 0) return;
+
+    // Original assets were memory-local. In the browser, loading the next
+    // image after fading to black creates a first-run pause/flash that then
+    // disappears from cache. Fetch and decode the handoff assets first.
+    const preload = await this.preloadFollowingTransitionAssets(frame);
+
+    const destination = this.surface(0);
+    const original = this.canvasCopy(destination);
+    const finalFrame = this.canvasCopy(destination);
+    finalFrame.getContext('2d').drawImage(
+      this.surface(sourceIndex), sourceX, sourceY, width, height,
+      destinationX, destinationY, width, height,
+    );
+    const target = destination.getContext('2d');
+
+    // Ikura's mode 0x13 blends the currently displayed frame directly into
+    // the supplied frame. Scene changes commonly invoke it twice: first
+    // with a black target, then with the new background. Adding another
+    // black midpoint here would therefore produce a duplicate fade-out.
+    const diagnostic = {
+      phase: 'start',
+      scenario: frame.scenario.name,
+      offset: operation.offset,
+      sourceIndex,
+      sourceVersion: this.surfaceVersions.get(sourceIndex) || 0,
+      destinationVersion: this.surfaceVersions.get(0) || 0,
+      duration,
+      preload,
+    };
+    this.onTransition(diagnostic);
+    const timing = await this.animate(duration, progress => {
+      target.clearRect(0, 0, destination.width, destination.height);
+      target.drawImage(original, 0, 0);
+      target.globalAlpha = progress;
+      target.drawImage(finalFrame, 0, 0);
+      target.globalAlpha = 1;
+      this.present();
+      this.onTransitionFrame({ ...diagnostic, progress });
+    });
+    target.clearRect(0, 0, destination.width, destination.height);
+    target.drawImage(finalFrame, 0, 0);
+    this.markSurfaceDirty(0);
+    const cleanView = this.surface(CLEAN_VIEW_SURFACE, destination.width, destination.height);
+    cleanView.getContext('2d').drawImage(finalFrame, 0, 0);
+    this.markSurfaceDirty(CLEAN_VIEW_SURFACE);
+    this.present();
+    this.onTransition({ ...diagnostic, phase: 'end', timing });
+  }
+
   async run() {
     if (this.waiting || !this.running) return;
     let budget = 20000;
@@ -518,6 +749,10 @@ export class LienVM {
       this.frames.push(frame);
     }
     this.variables = new Int32Array(state.variables || 8192);
+    // Saves made before scripted transition timing was restored contain zero
+    // here because the browser-native title bypassed TITLE.isf initialization.
+    if (this.variables[0x20] <= 0) this.variables[0x20] = 8;
+    if (this.variables[0x21] <= 0) this.variables[0x21] = 8;
     this.flags = new Uint8Array(state.flags || 8192);
     await this.mergeGlobalFlags();
     this.systemFlags = new Uint8Array(8192);
@@ -539,9 +774,12 @@ export class LienVM {
     this.surfaceVersions.clear();
     this.surfaceSnapshots.clear();
     this.colorKeySurfaces.clear();
-    for (const saved of state.surfaces || []) {
+    const restoredSurfaces = await Promise.all((state.surfaces || []).map(async saved => {
       const canvas = document.createElement('canvas');
       await drawBlob(canvas, saved.blob);
+      return { saved, canvas };
+    }));
+    for (const { saved, canvas } of restoredSurfaces) {
       this.surfaces.set(saved.index, canvas);
       this.surfaceVersions.set(saved.index, 0);
       this.surfaceSnapshots.set(saved.index, { version: 0, blob: Promise.resolve(saved.blob) });
@@ -966,6 +1204,9 @@ export class LienVM {
         if (data[0] === 0) this.present();
         break;
       }
+      case 0x55: // GRAPHICS_FADE_OUT
+        await this.fadeOut(data, frame, operation);
+        break;
       case 0x56: { // GRAPHICS_LOAD
         const index = this.value(data);
         const imageName = cstring(data, 4);
@@ -989,7 +1230,8 @@ export class LienVM {
         break;
       }
       case 0x57:
-        this.blit(data);
+        if (data[0] === 0x13) await this.transitionCopy(data, frame, operation);
+        else this.blit(data);
         break;
       case 0x70:
         // HTMLMediaElement.play() can remain pending while a large WAV is
@@ -1057,7 +1299,17 @@ export class LienVM {
         this.delay = this.value(data);
         break;
       case 0xF2:
-        if (this.delay > 0) await new Promise(resolve => setTimeout(resolve, Math.min(this.delay, 2000)));
+        if (this.delay > 0) {
+          // The CARD.GGD map wipe was authored around the original renderer's
+          // per-tile drawing overhead. Browser canvas completes those steps
+          // much faster, so restore its observed pacing without slowing any
+          // other scripted wait or transition.
+          const tileWipeScale = /^UZU[23]\.isf$/i.test(frame.scenario.name) ? 2 : 1;
+          await new Promise(resolve => setTimeout(
+            resolve,
+            Math.min(this.delay * tileWipeScale, 2000),
+          ));
+        }
         break;
       case 0xF5: // SAVE_DISABLE / ghost-action mode
         this.specialActionMode = Boolean(data[0]);

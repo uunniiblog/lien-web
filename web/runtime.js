@@ -1,4 +1,4 @@
-import { LienVM } from './vm.js?v=20261008-11';
+import { LienVM } from './vm.js?v=20261008-19';
 import {
   deleteSave, getSetting, listReadMessages, listSaves, markMessageRead as persistMessageRead,
   putSave, putSetting, exportStoredData, replaceStoredData,
@@ -20,6 +20,7 @@ const traceTitle = document.querySelector('#trace-title');
 const dialogueBox = document.querySelector('#dialogue-box');
 const dialogueName = document.querySelector('#dialogue-name');
 const dialogueText = document.querySelector('#dialogue-text');
+const transitionCover = document.querySelector('#transition-cover');
 const systemBar = document.querySelector('#game-system-bar');
 const systemActions = document.querySelector('#game-system-actions');
 const backlogPopup = document.querySelector('#backlog-popup');
@@ -62,7 +63,7 @@ const systemGhostButton = document.querySelector('[data-system-action="ghost"]')
 const SAVE_SLOTS = 20;
 const LOGICAL_WIDTH = 640;
 const LOGICAL_HEIGHT = 480;
-const RUNTIME_BUILD = '20261008-12';
+const RUNTIME_BUILD = '20261008-19';
 const VOICE_PREAMP = 3;
 const DEFAULT_BACKLOG_POSITION = Object.freeze({ x: 0.5, y: 9 / 38 });
 const DEFAULT_SETTINGS = Object.freeze({
@@ -115,6 +116,7 @@ const runtime = {
   textRevealCharacters: [],
   textRevealIndex: 0,
   messageInterfaceHidden: false,
+  releaseCoverOnTransition: false,
   setState(kind, message) {
     stateNode.className = `runtime-state ${kind}`;
     stateNode.lastElementChild.textContent = message;
@@ -158,7 +160,12 @@ function reportRuntimeError(error) {
 }
 
 function runtimeLog(event, detail = {}) {
-  const payload = { build: RUNTIME_BUILD, ...detail };
+  const payload = {
+    build: RUNTIME_BUILD,
+    clientTimeMs: Math.round(performance.now()),
+    wallTime: new Date().toISOString(),
+    ...detail,
+  };
   console.info(`[Lien runtime] ${event}`, payload);
   fetch('/api/log', {
     method: 'POST',
@@ -166,6 +173,74 @@ function runtimeLog(event, detail = {}) {
     body: JSON.stringify({ event, detail: payload }),
     keepalive: true,
   }).catch(() => {});
+}
+
+function clearTransitionCover() {
+  for (const animation of transitionCover.getAnimations()) animation.cancel();
+  transitionCover.style.opacity = '0';
+  transitionCover.hidden = true;
+}
+
+async function animateTransitionCover(opaque, duration, reason) {
+  const from = Number.parseFloat(getComputedStyle(transitionCover).opacity) || 0;
+  const to = opaque ? 1 : 0;
+  transitionCover.hidden = false;
+  const started = performance.now();
+  runtimeLog('handoff', { phase: 'start', reason, from, to, duration });
+  const animation = transitionCover.animate(
+    [{ opacity: from }, { opacity: to }],
+    { duration, easing: 'linear', fill: 'forwards' },
+  );
+  try {
+    await animation.finished;
+  } catch {
+    // A newer handoff superseded this one.
+  }
+  // Commit the final value as an inline style and remove the filled animation
+  // so a later frame-synchronized handoff can adjust opacity immediately.
+  animation.cancel();
+  transitionCover.style.opacity = String(to);
+  if (!opaque) transitionCover.hidden = true;
+  runtimeLog('handoff', {
+    phase: 'end', reason, from, to, duration,
+    elapsed: performance.now() - started,
+  });
+}
+
+let newGameWarmup = null;
+function warmNewGameAssets() {
+  if (newGameWarmup) return newGameWarmup;
+  newGameWarmup = (async () => {
+    const started = performance.now();
+    const openingNames = [
+      'LOAD.isf', 'EV_SET.isf', 'VRAM_CLR.isf', 'MAIN.isf',
+      'NT_OP01.isf', 'TUKI_OFF.isf', 'MSC_LOD.isf',
+    ];
+    const scenarios = await Promise.all(openingNames.map(fetchScenario));
+    const assets = [...new Set(scenarios.flatMap(scenario => {
+      const firstTransition = scenario.operations.findIndex(operation => (
+        operation.opcode === 0x57
+        && Number.parseInt(operation.dataHex.slice(0, 2), 16) === 0x13
+      ));
+      const operations = scenario.name.toUpperCase() === 'NT_OP01.ISF' && firstTransition >= 0
+        ? scenario.operations.slice(0, firstTransition + 1)
+        : scenario.operations;
+      return operations
+        .filter(operation => operation.opcode === 0x56 && operation.text)
+        .map(operation => `${operation.text}.GGD`);
+    }))];
+    const results = await Promise.allSettled(assets.map(loadImage));
+    const failed = results.flatMap((result, index) => result.status === 'rejected'
+      ? [{ asset: assets[index], error: String(result.reason) }]
+      : []);
+    runtimeLog('new-game-warmup', {
+      assets: assets.length,
+      failed,
+      elapsed: performance.now() - started,
+    });
+    return scenarios;
+  })();
+  return newGameWarmup;
 }
 
 function bytesToBase64(bytes) {
@@ -1039,6 +1114,30 @@ function makeVM() {
       runtime.executionTrace.push(event);
       if (runtime.executionTrace.length > 20000) runtime.executionTrace.shift();
     },
+    onTransition(detail) {
+      runtimeLog('transition', detail);
+    },
+    onTransitionFrame(detail) {
+      if (runtime.releaseCoverOnTransition && detail.scenario !== 'LOAD.isf') {
+        // Blend the compositor cover away during the first 12% of the real
+        // scene fade. Removing it instantaneously can expose a single frame
+        // of independently rendered interface layers before the canvas has
+        // visibly advanced.
+        const release = Math.min(1, detail.progress / 0.12);
+        transitionCover.hidden = false;
+        transitionCover.style.opacity = String(1 - release);
+        if (release < 1) return;
+        runtime.releaseCoverOnTransition = false;
+        clearTransitionCover();
+        runtimeLog('handoff', {
+          phase: 'released',
+          reason: 'first-game-transition',
+          scenario: detail.scenario,
+          offset: detail.offset,
+          transitionProgress: detail.progress,
+        });
+      }
+    },
   });
 }
 
@@ -1061,6 +1160,8 @@ async function drawTitle() {
 }
 
 async function enterTitle() {
+  runtime.releaseCoverOnTransition = false;
+  clearTransitionCover();
   setSkipMode(false);
   runtime.decisions.clear();
   showGhostAction(false);
@@ -1073,6 +1174,11 @@ async function enterTitle() {
   runtime.screen = 'title';
   runtime.hover = 'new';
   hideMessage();
+  // Start warming the opening before the title has finished decoding and
+  // before the user can reasonably select New Game.
+  void warmNewGameAssets().catch(error => runtimeLog('new-game-warmup-error', {
+    message: error instanceof Error ? error.message : String(error),
+  }));
   await Promise.all([drawTitle(), loadScenario('TITLE.isf')]);
   await playMusic('OP04.WAV');
   settingsButton.disabled = false;
@@ -1081,6 +1187,15 @@ async function enterTitle() {
 }
 
 async function beginNewGame() {
+  // Keep the title visible until all first-scene data is ready. Fading first
+  // would turn ordinary loading time into a conspicuous black-screen stall.
+  const warmedScenarios = await warmNewGameAssets().catch(error => {
+    runtimeLog('new-game-warmup-error', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  });
+  await animateTransitionCover(true, 500, 'new-game');
   runtime.decisions.clear();
   showGhostAction(false);
   runtime.screen = 'prologue';
@@ -1093,8 +1208,31 @@ async function beginNewGame() {
   runtime.executionTrace = [];
   runtimeLog('new-game', { entry: 'LOAD.isf' });
   runtime.vm = makeVM();
+  for (const scenario of warmedScenarios) {
+    runtime.vm.scenarios.set(scenario.name.toUpperCase(), Promise.resolve(scenario));
+  }
+  // LOAD.isf begins by fading the title away. The native browser title is
+  // not part of the new VM, so copy its currently displayed frame into the
+  // VM before allowing that original transition to execute.
+  runtime.vm.seedDisplay(stage);
+  // The browser-native title screen does not execute TITLE.isf itself. These
+  // two original title variables pace UZU/CARD and similar scripted tile
+  // transitions; without them every frame is drawn in one event-loop turn.
+  runtime.vm.variables[0x20] = 8;
+  runtime.vm.variables[0x21] = 8;
+  // The compositor cover just performed LOAD.isf's title fade. Suppress only
+  // that first scripted fade so the black interval is not doubled.
+  runtime.vm.skipNextFadeOut = true;
+  runtime.releaseCoverOnTransition = true;
   for (const button of [backlogButton, skipButton, saveButton, loadButton, settingsButton]) button.disabled = false;
-  await runtime.vm.start('LOAD.isf');
+  try {
+    await runtime.vm.start('LOAD.isf');
+  } finally {
+    if (runtime.releaseCoverOnTransition) {
+      runtime.releaseCoverOnTransition = false;
+      await animateTransitionCover(false, 350, 'new-game-fallback');
+    }
+  }
 }
 
 function itemAt(event) {
@@ -1162,12 +1300,24 @@ async function loadFromSlot(record) {
     });
     stopMusic();
     stopVoice();
-    if (!runtime.vm) runtime.vm = makeVM();
+    if (!runtime.vm) {
+      runtime.vm = makeVM();
+      runtime.vm.seedDisplay(stage);
+    }
+    saveDialog.close();
+    await animateTransitionCover(true, 350, 'load-save');
     runtime.screen = 'prologue';
     runtime.hover = null;
     hideMessage();
     startButton.hidden = true;
+    const restoreStarted = performance.now();
     await runtime.vm.importState(record.state);
+    runtimeLog('load-save-restored', {
+      slot: record.slot,
+      surfaces: record.state?.surfaces?.length || 0,
+      elapsed: performance.now() - restoreStarted,
+    });
+    await animateTransitionCover(false, 350, 'load-save');
     if (runtime.vm.migrations.length) {
       runtimeLog('save-migrated', {
         slot: record.slot,
@@ -1184,9 +1334,10 @@ async function loadFromSlot(record) {
     backlogButton.disabled = false;
     skipButton.disabled = false;
     settingsButton.disabled = false;
-    saveDialog.close();
     runtime.setState('ready', `${record.scenario} · loaded from slot ${record.slot}`);
   } catch (error) {
+    clearTransitionCover();
+    if (!saveDialog.open) saveDialog.showModal();
     saveStatus.textContent = `Could not load: ${error.message}`;
   }
 }

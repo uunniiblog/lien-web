@@ -97,6 +97,16 @@ button { font: inherit; }
 
 #stage { width: 100%; height: 100%; display: block; image-rendering: auto; }
 
+.transition-cover {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+}
+.transition-cover[hidden] { display: none; }
+
 .choice-layer { position: absolute; z-index: 6; inset: 0; pointer-events: none; }
 .choice-layer[hidden] { display: none; }
 .choice-target { position: absolute; pointer-events: auto; padding: 0; border: 0; border-radius: .2rem; background: transparent; cursor: pointer; }
