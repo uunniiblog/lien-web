@@ -1,3 +1,19 @@
+@font-face {
+  font-family: "Lien Bundled Mincho";
+  src: url("/fonts/lien-mincho.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Lien MS Gothic Style";
+  src: url("/fonts/lien-ms-gothic-style.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   --ink: #f7f3e9;
@@ -120,7 +136,7 @@ button { font: inherit; }
   color: #fff8df;
   background: linear-gradient(90deg, rgba(19, 25, 48, .96), rgba(35, 38, 59, .92));
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45), 0 .2rem .6rem rgba(0, 0, 0, .35);
-  font: 500 max(.8rem, 2.7cqw)/1.2 "Yu Mincho", "Noto Serif JP", serif;
+  font: 500 max(.8rem, 2.7cqw)/1.2 var(--game-text-font, "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif);
   text-align: left;
   white-space: nowrap;
 }
@@ -258,7 +274,7 @@ button { font: inherit; }
   flex: 0 0 auto;
   margin: 0 0 .35cqw;
   color: var(--gold);
-  font: 600 max(.85rem, 1.8cqw)/1.25 "Yu Mincho", "Hiragino Mincho ProN", serif;
+  font: 600 max(.85rem, 1.8cqw)/1.25 var(--game-text-font, "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif);
   letter-spacing: .08em;
 }
 .dialogue-text {
@@ -269,7 +285,7 @@ button { font: inherit; }
   overflow: hidden;
   margin: 0;
   color: #fffdf8;
-  font: 500 max(1rem, 2.25cqw)/1.62 "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif;
+  font: 500 max(1rem, 2.25cqw)/1.62 var(--game-text-font, "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   text-shadow: 0 1px 2px #000;
@@ -311,6 +327,21 @@ button { font: inherit; }
 .backlog-popup header button { cursor: pointer; }
 .backlog-header-actions { display: flex; align-items: center; gap: .5cqw; }
 .settings-popup { z-index: 12; left: 10%; top: 4%; width: 80%; height: 88%; min-width: 52%; min-height: 45%; max-width: 90%; max-height: 94%; padding: 2cqw; display: flex; flex-direction: column; resize: both; overflow: hidden; }
+.settings-popup.settings-detached {
+  container-type: inline-size;
+  position: fixed;
+  z-index: 1000;
+  left: 50%;
+  top: 50%;
+  width: min(90vw, 1100px);
+  height: min(86vh, 760px);
+  min-width: min(24rem, 90vw);
+  min-height: min(22rem, 80vh);
+  max-width: 96vw;
+  max-height: 96vh;
+  transform: translate(-50%, -50%);
+  padding: clamp(1rem, 2cqw, 2rem);
+}
 .settings-popup header { flex: 0 0 auto; padding-bottom: 1cqw; }
 .settings-popup header button { cursor: pointer; }
 .settings-header-actions { display: flex; align-items: center; gap: .5cqw; }
@@ -319,7 +350,7 @@ button { font: inherit; }
 .game-popup button { border: 1px solid var(--line); border-radius: .2rem; min-height: max(2rem, 3.2cqw); padding: 0 .7rem; background: rgba(8,10,20,.72); color: var(--ink); font-size: max(.85rem, 1.35cqw); cursor: pointer; }
 .game-popup button:hover { border-color: var(--rose); }
 .backlog-list { display: grid; flex: 1 1 auto; min-height: 0; align-content: start; gap: 1.1cqw; margin: 1.2cqw 0 0; padding: 0 .45cqw 0 0; overflow: auto; overscroll-behavior: contain; list-style: none; }
-.backlog-entry { display: grid; grid-template-columns: max(2.7rem, 4.3cqw) max(3.5rem, 5.2cqw) minmax(4.5rem, 18%) 1fr; align-items: center; gap: 1.2cqw; margin: 0; padding-bottom: 1cqw; border-bottom: 1px solid rgba(255,255,255,.1); font: 500 max(.9rem, 1.8cqw)/1.55 "Yu Mincho", "Noto Serif JP", serif; }
+.backlog-entry { display: grid; grid-template-columns: max(2.7rem, 4.3cqw) max(3.5rem, 5.2cqw) minmax(4.5rem, 18%) 1fr; align-items: center; gap: 1.2cqw; margin: 0; padding-bottom: 1cqw; border-bottom: 1px solid rgba(255,255,255,.1); font: 500 max(.9rem, 1.8cqw)/1.55 var(--game-text-font, "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif); }
 .game-popup .backlog-jump { min-height: max(2rem, 3.2cqw); padding: 0 .45cqw; font-size: max(.68rem, 1.05cqw); line-height: 1.15; }
 .game-popup .backlog-jump:disabled { opacity: .35; cursor: not-allowed; }
 .backlog-portrait { display: grid; place-items: center; width: 100%; height: max(3.5rem, 5.2cqw); }
@@ -336,6 +367,7 @@ button { font: inherit; }
 .settings-grid-single { grid-template-columns: minmax(0, 1fr); }
 .sound-settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .text-settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.font-settings-row { margin-top: .65cqw; }
 .setting-row { display: flex; align-items: flex-start; gap: .75rem; margin: 0; padding: .75cqw .9cqw; background: rgba(5,7,14,.48); border: 1px solid rgba(255,255,255,.12); cursor: pointer; }
 .setting-row input { width: 1.2rem; height: 1.2rem; margin-top: .15rem; accent-color: var(--rose); }
 .setting-row strong, .setting-row small { display: block; }
@@ -348,6 +380,12 @@ button { font: inherit; }
 .slider-setting input[type="range"] { width: 100%; min-width: 0; accent-color: var(--rose); cursor: pointer; }
 .slider-setting small { color: var(--muted); font-size: max(.65rem, .9cqw); line-height: 1.3; }
 .resolution-row small { color: var(--muted); font-size: max(.7rem, 1.15cqw); }
+.select-setting { display: grid; grid-template-columns: minmax(0, 1fr) minmax(12rem, .65fr); align-items: center; gap: 1rem; padding: .75cqw .9cqw; background: rgba(5,7,14,.48); border: 1px solid rgba(255,255,255,.12); }
+.select-setting strong, .select-setting small { display: block; }
+.select-setting strong { font-size: max(.82rem, 1.25cqw); }
+.select-setting small { margin-top: .25rem; color: var(--muted); font-size: max(.68rem, 1cqw); line-height: 1.35; }
+.select-setting select { width: 100%; min-height: 2.35rem; padding: .35rem .55rem; border: 1px solid var(--line); border-radius: .2rem; color: var(--ink); background: rgba(8,10,20,.9); font: inherit; cursor: pointer; }
+.select-setting select:focus-visible { outline: 1px solid var(--rose); border-color: var(--rose); }
 .save-transfer { display: grid; grid-template-columns: minmax(8rem, .7fr) minmax(14rem, 1.3fr); align-items: center; gap: .55cqw .8cqw; margin-top: 1.1cqw; padding: .7cqw .9cqw; background: rgba(5,7,14,.48); border: 1px solid rgba(255,255,255,.12); }
 .save-transfer > strong { font-size: max(.9rem, 1.45cqw); color: var(--gold); }
 .save-transfer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .7cqw; }
@@ -358,6 +396,7 @@ button { font: inherit; }
   .sound-settings-grid, .text-settings-grid { grid-template-columns: 1fr; }
   .save-transfer { grid-template-columns: 1fr; }
   .save-transfer > small { grid-column: auto; }
+  .select-setting { grid-template-columns: 1fr; }
 }
 
 .control-strip { display: flex; gap: .45rem; width: 100%; }

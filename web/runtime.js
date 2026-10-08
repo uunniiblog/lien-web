@@ -1,4 +1,4 @@
-import { LienVM } from './vm.js?v=20261008-19';
+import { LienVM } from './vm.js?v=20261008-27';
 import {
   deleteSave, getSetting, listReadMessages, listSaves, markMessageRead as persistMessageRead,
   putSave, putSetting, exportStoredData, replaceStoredData,
@@ -34,6 +34,7 @@ const textSpeed = document.querySelector('#text-speed');
 const textSpeedValue = document.querySelector('#text-speed-value');
 const textboxTransparency = document.querySelector('#textbox-transparency');
 const textboxTransparencyValue = document.querySelector('#textbox-transparency-value');
+const gameFont = document.querySelector('#game-font');
 const bgmVolume = document.querySelector('#bgm-volume');
 const voiceVolume = document.querySelector('#voice-volume');
 const effectVolume = document.querySelector('#effect-volume');
@@ -63,7 +64,7 @@ const systemGhostButton = document.querySelector('[data-system-action="ghost"]')
 const SAVE_SLOTS = 20;
 const LOGICAL_WIDTH = 640;
 const LOGICAL_HEIGHT = 480;
-const RUNTIME_BUILD = '20261008-19';
+const RUNTIME_BUILD = '20261008-27';
 const VOICE_PREAMP = 3;
 const DEFAULT_BACKLOG_POSITION = Object.freeze({ x: 0.5, y: 9 / 38 });
 const DEFAULT_SETTINGS = Object.freeze({
@@ -75,6 +76,18 @@ const DEFAULT_SETTINGS = Object.freeze({
   renderScale: 1,
   textSpeed: 100,
   textboxTransparency: 0,
+  gameFont: 'current',
+});
+
+const GAME_FONT_STACKS = Object.freeze({
+  current: '"Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif',
+  'bundled-mincho': '"MS Mincho", "Yu Mincho", "Lien Bundled Mincho", "Noto Serif JP", serif',
+  'ms-gothic': '"MS Gothic", "Lien MS Gothic Style", "Noto Sans Mono CJK JP", monospace',
+  gothic: '"Yu Gothic", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif',
+  rounded: '"Hiragino Maru Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif',
+  'system-serif': 'ui-serif, "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif',
+  'system-sans': 'system-ui, "Yu Gothic", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif',
+  monospace: '"Noto Sans Mono CJK JP", "BIZ UDGothic", "Yu Gothic", monospace',
 });
 
 const TITLE_ITEMS = [
@@ -82,6 +95,68 @@ const TITLE_ITEMS = [
   { id: 'continue', x: 55, y: 269, width: 241, height: 34, spriteY: 51 },
   { id: 'extras', x: 55, y: 319, width: 241, height: 34, spriteY: 101 },
   { id: 'exit', x: 55, y: 370, width: 241, height: 34, spriteY: 152 },
+];
+
+const OMAKE_ITEMS = [
+  { id: 'cg', x: 219, y: 242, width: 186, height: 45, spriteY: 0, spriteHeight: 45 },
+  { id: 'music', x: 219, y: 287, width: 186, height: 34, spriteY: 45, spriteHeight: 34 },
+  { id: 'back', x: 219, y: 321, width: 186, height: 45, spriteY: 79, spriteHeight: 42 },
+];
+
+const CG_CATEGORY_ITEMS = [
+  { id: 'wa', x: 88, y: 87, width: 99, height: 54 },
+  { id: 'yu', x: 249, y: 236, width: 75, height: 31 },
+  { id: 'mi', x: 312, y: 412, width: 106, height: 35 },
+  { id: 'ak', x: 486, y: 180, width: 84, height: 33 },
+  { id: 'etc', x: 25, y: 397, width: 66, height: 34 },
+];
+
+const CG_SLOTS = [
+  { x: 29, y: 113 }, { x: 187, y: 113 }, { x: 343, y: 113 }, { x: 498, y: 113 },
+  { x: 29, y: 204 }, { x: 187, y: 204 }, { x: 343, y: 204 }, { x: 498, y: 204 },
+  { x: 29, y: 295 }, { x: 187, y: 295 }, { x: 343, y: 295 }, { x: 498, y: 295 },
+  { x: 29, y: 386 }, { x: 187, y: 386 }, { x: 343, y: 386 }, { x: 498, y: 386 },
+];
+
+const CG_GALLERIES = Object.freeze({
+  wa: {
+    base: 'CGM-WA.GGD', flags: [740, 741, 743, 744, 745, 746, 747, 748, 750, 751, 752, 753, 755, 756],
+    events: ['EVWA01', 'EVWA02', 'EVWA03', 'EVWA04', 'EVWA05', 'EVWA06', 'EVWA07', 'EVWA08', 'EVWA09', 'EVWA10', 'EVWA11', 'EVWA12', 'EVWA13', 'EVWA14'],
+    variants: { 1: [{ name: 'EVWA02A', flag: 742 }], 7: [{ name: 'EVWA08A', flag: 749 }], 11: [{ name: 'EVWA12A', flag: 754 }] },
+    miniFlags: [810, 811, 812, 813, 814, 815, 816, 817, 818, 819, 820],
+    minis: ['MWWA01', 'MWWA02', 'MWWA03', 'MWWA04', 'MWWA05', 'MWWA06', 'MWWA07', 'MWWA08', 'MWWA09', 'MWWA10', 'MWWA11'],
+  },
+  yu: {
+    base: 'CGM-YU.GGD', flags: [760, 761, 762, 763, 764, 765, 766, 767, 769, 770, 771, 772, 773],
+    events: ['EVYU01', 'EVYU02', 'EVYU03', 'EVYU04', 'EVYU05', 'EVYU06', 'EVYU07', 'EVYU08', 'EVYU09', 'EVYU10', 'EVYU11', 'EVYU12', 'EVYU13'],
+    variants: { 7: [{ name: 'EVYU08A', flag: 768 }] },
+    miniFlags: [840, 841, 842, 843, 844, 845, 846, 847],
+    minis: ['MWYU01', 'MWYU02', 'MWYU03', 'MWYU04', 'MWYU05', 'MWYU06', 'MWYU07', 'MWYU08'],
+  },
+  mi: {
+    base: 'CGM-MI.GGD', flags: [720, 722, 723, 724, 725, 726, 727, 728, 729, 730, 732, 733, 735, 736, 737],
+    events: ['EVMI01', 'EVMI02', 'EVMI03', 'EVMI04', 'EVMI05', 'EVMI06', 'EVMI07', 'EVMI08', 'EVMI09', 'EVMI10', 'EVMI11', 'EVMI12', 'EVMI13', 'EVMI14', 'EVMI15'],
+    variants: { 0: [{ name: 'EVMI01A', flag: 721 }], 9: [{ name: 'EVMI10A', flag: 731 }], 11: [{ name: 'EVMI12A', flag: 734 }] },
+    miniFlags: [830, 831, 832, 833, 834, 835, 836, 837],
+    minis: ['MWMI01', 'MWMI02', 'MWMI03', 'MWMI04', 'MWMI05', 'MWMI06', 'MWMI07', 'MWMI08'],
+  },
+  ak: {
+    base: 'CGM-AK.GGD', flags: [700, 701, 702, 703, 704, 705, 706, 707, 709, 710, 711, 712, 714, 715],
+    events: ['EVAK01', 'EVAK02', 'EVAK03', 'EVAK04', 'EVAK05', 'EVAK06', 'EVAK07', 'EVAK08', 'EVAK09', 'EVAK10', 'EVAK11', 'EVAK12', 'EVAK13', 'EVAK14'],
+    variants: { 7: [{ name: 'EVAK08A', flag: 708 }], 11: [{ name: 'EVAK12A', flag: 713 }] },
+    miniFlags: [800, 801, 802, 803, 804, 805],
+    minis: ['MWAK01', 'MWAK02', 'MWAK04', 'MWAK05', 'MWAK06', 'MWAK07'],
+  },
+  etc: {
+    base: 'CGM-OT.GGD', flags: [780, 781, 782], events: ['EVOT01', 'EVOT02', 'EVOT03'],
+    miniFlags: [850, 851], minis: ['MWOT01', 'MWOT02'],
+  },
+});
+
+const MUSIC_TRACKS = [
+  { name: 'OP04.WAV', label: 'Opening · 風が吹く街へ' },
+  ...Array.from({ length: 11 }, (_, index) => ({ name: `L${String(index + 2).padStart(2, '0')}.WAV`, label: `Track ${index + 1}` })),
+  { name: 'END04.WAV', label: 'Ending · おわらないきみのうた' },
 ];
 
 const runtime = {
@@ -92,6 +167,7 @@ const runtime = {
   images: new Map(),
   music: null,
   musicName: null,
+  musicRequestId: 0,
   voice: null,
   voiceFinished: null,
   voiceContext: null,
@@ -112,6 +188,7 @@ const runtime = {
   backlogPosition: { ...DEFAULT_BACKLOG_POSITION },
   backlogSize: null,
   settingsSize: null,
+  omake: { hover: null, category: null, viewer: null, miniIndex: 0 },
   textRevealTimer: null,
   textRevealCharacters: [],
   textRevealIndex: 0,
@@ -480,22 +557,39 @@ function hideMessage() {
 }
 
 async function playMusic(name) {
-  if (runtime.music) runtime.music.pause();
-  const audio = new Audio(`/api/audio/WMSC/${encodeURIComponent(name)}`);
+  const requestId = ++runtime.musicRequestId;
+  let audio = runtime.music;
+  if (!audio) {
+    audio = new Audio();
+    audio.preload = 'auto';
+    runtime.music = audio;
+  }
+  if (runtime.musicName === name && !audio.paused && !audio.ended) return;
+  audio.pause();
   audio.loop = true;
   audio.volume = runtime.settings.bgmVolume / 100;
-  runtime.music = audio;
   runtime.musicName = name;
-  try { await audio.play(); } catch {
-    runtime.setState('ready', 'Title ready · click once to enable audio');
+  audio.src = `/api/audio/WMSC/${encodeURIComponent(name)}`;
+  audio.load();
+  try {
+    await audio.play();
+  } catch (error) {
+    // Changing tracks interrupts the previous play() promise. That is normal
+    // during quick Music Mode browsing; only the newest request may report a
+    // real playback failure.
+    if (requestId !== runtime.musicRequestId || error?.name === 'AbortError') return;
+    runtimeLog('music-playback-error', { name, message: error instanceof Error ? error.message : String(error) });
+    runtime.setState('ready', 'Audio is paused · click a track to enable playback');
   }
 }
 
 function stopMusic() {
   if (!runtime.music) return;
+  runtime.musicRequestId += 1;
   runtime.music.pause();
-  runtime.music.currentTime = 0;
-  runtime.music = null;
+  try { runtime.music.currentTime = 0; } catch {}
+  runtime.music.removeAttribute('src');
+  runtime.music.load();
   runtime.musicName = null;
 }
 
@@ -704,7 +798,7 @@ function setMessageInterfaceHidden(hidden) {
 
 function closeGamePopups() {
   backlogPopup.hidden = true;
-  settingsPopup.hidden = true;
+  closeSettings();
 }
 
 function gamePopupOpen() {
@@ -800,7 +894,7 @@ async function jumpToBacklogEntry(index, entry, button) {
 
 function openBacklog() {
   setSkipMode(false);
-  settingsPopup.hidden = true;
+  closeSettings();
   renderBacklog();
   backlogPopup.hidden = false;
   requestAnimationFrame(() => {
@@ -932,24 +1026,61 @@ function setTextboxTransparency(value, persist = true) {
   if (persist) putSetting('textboxTransparency', amount).catch(() => {});
 }
 
+function setGameFont(value, persist = true) {
+  const selected = Object.hasOwn(GAME_FONT_STACKS, value) ? value : DEFAULT_SETTINGS.gameFont;
+  runtime.settings.gameFont = selected;
+  gameFont.value = selected;
+  document.documentElement.style.setProperty('--game-text-font', GAME_FONT_STACKS[selected]);
+  if (runtime.vm?.waiting && !runtime.vm.choice && runtime.vm.pendingText.length) {
+    const text = runtime.vm.pendingText.join('').replace(/^\n+/u, '');
+    runtime.vm.dialoguePages = paginateDialogue(runtime.vm.pendingName, text);
+    runtime.vm.dialoguePage = Math.min(runtime.vm.dialoguePage, runtime.vm.dialoguePages.length - 1);
+    showDialogue(runtime.vm.pendingName, runtime.vm.dialoguePages[runtime.vm.dialoguePage]);
+  }
+  if (persist) putSetting('gameFont', selected).catch(() => {});
+}
+
 function applySettingsSize() {
   if (settingsPopup.hidden) return;
   if (!runtime.settingsSize) {
-    settingsPopup.style.removeProperty('width');
-    settingsPopup.style.removeProperty('height');
+    // Preserve the original in-game popup dimensions on first use even
+    // though the window now lives at viewport level and may grow beyond it.
+    settingsPopup.style.width = `${stageWrap.clientWidth * 0.8}px`;
+    settingsPopup.style.height = `${stageWrap.clientHeight * 0.88}px`;
     return;
   }
-  settingsPopup.style.width = `${stageWrap.clientWidth * runtime.settingsSize.width}px`;
-  settingsPopup.style.height = `${stageWrap.clientHeight * runtime.settingsSize.height}px`;
+  settingsPopup.style.width = `${window.innerWidth * runtime.settingsSize.width}px`;
+  settingsPopup.style.height = `${window.innerHeight * runtime.settingsSize.height}px`;
 }
 
 function saveSettingsSize() {
   if (settingsPopup.hidden) return;
   runtime.settingsSize = {
-    width: Math.min(.9, Math.max(.52, settingsPopup.offsetWidth / stageWrap.clientWidth)),
-    height: Math.min(.94, Math.max(.45, settingsPopup.offsetHeight / stageWrap.clientHeight)),
+    width: Math.min(.96, Math.max(.3, settingsPopup.offsetWidth / window.innerWidth)),
+    height: Math.min(.96, Math.max(.3, settingsPopup.offsetHeight / window.innerHeight)),
   };
   putSetting('settingsSize', runtime.settingsSize).catch(() => {});
+}
+
+const settingsHome = settingsPopup.parentNode;
+const settingsHomeNextSibling = settingsPopup.nextSibling;
+
+function openSettings() {
+  setSkipMode(false);
+  backlogPopup.hidden = true;
+  if (settingsPopup.parentNode !== document.body) document.body.append(settingsPopup);
+  settingsPopup.classList.add('settings-detached');
+  settingsPopup.hidden = false;
+  requestAnimationFrame(applySettingsSize);
+}
+
+function closeSettings() {
+  if (!settingsPopup.hidden) saveSettingsSize();
+  settingsPopup.hidden = true;
+  settingsPopup.classList.remove('settings-detached');
+  if (settingsPopup.parentNode !== settingsHome) {
+    settingsHome.insertBefore(settingsPopup, settingsHomeNextSibling);
+  }
 }
 
 function resetRuntimeSettings() {
@@ -963,12 +1094,14 @@ function resetRuntimeSettings() {
   setRenderScale(DEFAULT_SETTINGS.renderScale);
   setTextSpeed(DEFAULT_SETTINGS.textSpeed);
   setTextboxTransparency(DEFAULT_SETTINGS.textboxTransparency);
+  setGameFont(DEFAULT_SETTINGS.gameFont);
   putSetting('skipReadOnly', DEFAULT_SETTINGS.skipReadOnly).catch(() => {});
   putSetting('continueVoice', DEFAULT_SETTINGS.continueVoice).catch(() => {});
   runtime.settingsSize = null;
   settingsPopup.style.removeProperty('width');
   settingsPopup.style.removeProperty('height');
   putSetting('settingsSize', null).catch(() => {});
+  if (!settingsPopup.hidden) applySettingsSize();
 }
 
 function setSkipMode(enabled) {
@@ -1159,6 +1292,167 @@ async function drawTitle() {
   }
 }
 
+function logicalPoint(event) {
+  const bounds = stage.getBoundingClientRect();
+  return {
+    x: (event.clientX - bounds.left) * LOGICAL_WIDTH / bounds.width,
+    y: (event.clientY - bounds.top) * LOGICAL_HEIGHT / bounds.height,
+  };
+}
+
+function hitItem(items, point) {
+  return items.find(item => point.x >= item.x && point.x < item.x + item.width
+    && point.y >= item.y && point.y < item.y + item.height);
+}
+
+async function drawOmakeMenu() {
+  const [base, selected] = await Promise.all([loadImage('OMAKE_A.GGD'), loadImage('OMAKE_C.GGD')]);
+  paint(base);
+  const item = OMAKE_ITEMS.find(({ id }) => id === runtime.hover);
+  if (item) {
+    context.drawImage(selected, 0, item.spriteY, item.width, item.spriteHeight, item.x, item.y, item.width, item.spriteHeight);
+  }
+}
+
+async function enterOmake() {
+  runtime.screen = 'omake';
+  runtime.omake = { category: null, viewer: null, miniIndex: 0 };
+  runtime.hover = 'cg';
+  hideMessage();
+  await drawOmakeMenu();
+  runtime.setState('ready', 'Original Extras menu');
+}
+
+async function drawCgCategories() {
+  const [base, selected] = await Promise.all([loadImage('CG-N.GGD'), loadImage('CG-S.GGD')]);
+  paint(base);
+  const item = CG_CATEGORY_ITEMS.find(({ id }) => id === runtime.hover);
+  if (item) context.drawImage(selected, item.x, item.y, item.width, item.height, item.x, item.y, item.width, item.height);
+}
+
+async function enterCgCategories() {
+  runtime.screen = 'omake-cg';
+  runtime.hover = null;
+  runtime.omake.category = null;
+  await playMusic('L02.WAV');
+  await drawCgCategories();
+  runtime.setState('ready', 'CG mode · choose a character');
+}
+
+function slotUnlocked(gallery, index) {
+  return Boolean(runtime.globalFlags[gallery.flags[index]]);
+}
+
+function miniUnlocked(gallery, index) {
+  return Boolean(runtime.globalFlags[gallery.miniFlags[index]]);
+}
+
+async function drawCgGallery() {
+  const gallery = CG_GALLERIES[runtime.omake.category];
+  paint(await loadImage(gallery.base));
+  context.save();
+  for (let index = 0; index < gallery.events.length; index += 1) {
+    if (slotUnlocked(gallery, index)) continue;
+    const slot = CG_SLOTS[index];
+    context.fillStyle = '#000';
+    context.fillRect(slot.x + 1, slot.y + 1, 112, 83);
+  }
+  const hovered = Number.isInteger(runtime.hover) ? runtime.hover : -1;
+  if (hovered >= 0 && slotUnlocked(gallery, hovered)) {
+    const slot = CG_SLOTS[hovered];
+    context.strokeStyle = '#fff4cf';
+    context.lineWidth = 3;
+    context.strokeRect(slot.x - 1.5, slot.y - 1.5, 117, 88);
+  }
+  context.restore();
+}
+
+async function enterCgGallery(category) {
+  runtime.screen = 'omake-gallery';
+  runtime.omake.category = category;
+  runtime.hover = null;
+  runtime.omake.viewer = null;
+  runtime.omake.miniIndex = 0;
+  await drawCgGallery();
+  runtime.setState('ready', `CG mode · ${category.toUpperCase()} gallery`);
+}
+
+async function showCgAsset(name, kind = 'event', names = [name], index = 0) {
+  runtime.omake.viewer = { name, kind, names, index };
+  paint(await loadImage(`${name}.GGD`));
+  runtime.screen = 'omake-viewer';
+  runtime.setState('ready', `${kind === 'mini' ? 'Mini window' : 'CG'} · click or press Escape to return`);
+}
+
+async function showMiniWindow() {
+  const gallery = CG_GALLERIES[runtime.omake.category];
+  const unlocked = gallery.minis.filter((_, index) => miniUnlocked(gallery, index));
+  if (!unlocked.length) {
+    showMessage('Mini Window', 'No SD artwork has been unlocked for this gallery yet.');
+    return;
+  }
+  runtime.omake.miniIndex %= unlocked.length;
+  await drawCgGallery();
+  const image = await loadImage(`${unlocked[runtime.omake.miniIndex]}.GGD`);
+  const width = Math.min(image.width, 400);
+  const height = Math.min(image.height, 300);
+  const x = (LOGICAL_WIDTH - width) / 2;
+  const y = (LOGICAL_HEIGHT - height) / 2;
+  context.save();
+  context.fillStyle = 'rgba(28, 17, 22, .55)';
+  context.fillRect(0, 68, LOGICAL_WIDTH, LOGICAL_HEIGHT - 68);
+  context.fillStyle = '#f4e9d7';
+  context.fillRect(x - 3, y - 3, width + 6, height + 6);
+  context.drawImage(image, 0, 0, image.width, image.height, x, y, width, height);
+  context.restore();
+  runtime.omake.viewer = { kind: 'mini-overlay', unlocked };
+  runtime.screen = 'omake-mini';
+  runtime.setState('ready', 'Mini window · click to see the next SD artwork');
+}
+
+async function drawMusicMode() {
+  const base = await loadImage('MSC_A.GGD');
+  paint(base);
+  const hover = runtime.hover;
+  const boxes = musicHitboxes();
+  const item = boxes.find(({ id }) => id === hover);
+  if (item) {
+    context.save();
+    context.fillStyle = item.id === 'stop' || item.id === 'exit' ? 'rgba(255, 116, 139, .42)' : 'rgba(127, 192, 224, .35)';
+    context.fillRect(item.x, item.y, item.width, item.height);
+    context.restore();
+  }
+  if (runtime.musicName) {
+    context.save();
+    context.fillStyle = 'rgba(76, 45, 48, .88)';
+    context.fillRect(225, 443, 190, 25);
+    context.fillStyle = '#fff6e7';
+    context.font = '15px serif';
+    context.textAlign = 'center';
+    context.fillText(MUSIC_TRACKS.find(track => track.name === runtime.musicName)?.label || runtime.musicName, 320, 461);
+    context.restore();
+  }
+}
+
+function musicHitboxes() {
+  const result = [
+    { id: 0, x: 34, y: 107, width: 178, height: 42 },
+    { id: 'stop', x: 438, y: 105, width: 92, height: 45 },
+    { id: 'exit', x: 15, y: 398, width: 150, height: 45 },
+  ];
+  for (let index = 1; index <= 5; index += 1) result.push({ id: index, x: 34, y: 151 + (index - 1) * 37, width: 90, height: 30 });
+  for (let index = 6; index <= 11; index += 1) result.push({ id: index, x: 508, y: 187 + (index - 6) * 37, width: 92, height: 30 });
+  result.push({ id: 12, x: 305, y: 418, width: 310, height: 50 });
+  return result;
+}
+
+async function enterMusicMode() {
+  runtime.screen = 'omake-music';
+  runtime.hover = null;
+  await drawMusicMode();
+  runtime.setState('ready', 'Music mode · original soundtrack player');
+}
+
 async function enterTitle() {
   runtime.releaseCoverOnTransition = false;
   clearTransitionCover();
@@ -1236,10 +1530,7 @@ async function beginNewGame() {
 }
 
 function itemAt(event) {
-  const bounds = stage.getBoundingClientRect();
-  const x = (event.clientX - bounds.left) * LOGICAL_WIDTH / bounds.width;
-  const y = (event.clientY - bounds.top) * LOGICAL_HEIGHT / bounds.height;
-  return TITLE_ITEMS.find(item => x >= item.x && x < item.x + item.width && y >= item.y && y < item.y + item.height);
+  return hitItem(TITLE_ITEMS, logicalPoint(event));
 }
 
 async function activateTitleItem(id) {
@@ -1248,9 +1539,22 @@ async function activateTitleItem(id) {
     return openSaveDialog('load');
   }
   if (id === 'extras') {
-    return showMessage('Extras', 'This menu remains locked until the original completion flags are implemented.');
+    return enterOmake();
   }
   showMessage('Exit', 'Close this browser tab when finished. Stop the local data server with Ctrl+C.');
+}
+
+async function leaveOmakeScreen() {
+  hideMessage();
+  if (runtime.screen === 'omake' || runtime.screen === 'omake-cg' || runtime.screen === 'omake-music') {
+    await enterTitle();
+  } else if (runtime.screen === 'omake-gallery') {
+    await enterCgCategories();
+  } else if (runtime.screen === 'omake-viewer' || runtime.screen === 'omake-mini') {
+    runtime.screen = 'omake-gallery';
+    runtime.omake.viewer = null;
+    await drawCgGallery();
+  }
 }
 
 function stageBlob() {
@@ -1428,7 +1732,7 @@ async function openSaveDialog(mode) {
 async function bootstrap() {
   try {
     runtimeLog('bootstrap', { userAgent: navigator.userAgent });
-    const [manifestResponse, readMessages, readOnly, savedContinueVoice, savedBgm, savedVoice, savedEffect, savedBacklogPosition, savedBacklogSize, savedRenderScale, savedTextSpeed, savedTextboxTransparency, savedSettingsSize, savedGlobalFlags] = await Promise.all([
+    const [manifestResponse, readMessages, readOnly, savedContinueVoice, savedBgm, savedVoice, savedEffect, savedBacklogPosition, savedBacklogSize, savedRenderScale, savedTextSpeed, savedTextboxTransparency, savedGameFont, savedSettingsSize, savedGlobalFlags] = await Promise.all([
       api('/api/manifest'),
       listReadMessages().catch(() => []),
       getSetting('skipReadOnly', true).catch(() => true),
@@ -1441,6 +1745,7 @@ async function bootstrap() {
       getSetting('renderScale', 1).catch(() => 1),
       getSetting('textSpeed', DEFAULT_SETTINGS.textSpeed).catch(() => DEFAULT_SETTINGS.textSpeed),
       getSetting('textboxTransparency', DEFAULT_SETTINGS.textboxTransparency).catch(() => DEFAULT_SETTINGS.textboxTransparency),
+      getSetting('gameFont', DEFAULT_SETTINGS.gameFont).catch(() => DEFAULT_SETTINGS.gameFont),
       getSetting('settingsSize', null).catch(() => null),
       getSetting('globalFlags', null).catch(() => null),
     ]);
@@ -1465,8 +1770,8 @@ async function bootstrap() {
     }
     if (savedSettingsSize && Number.isFinite(savedSettingsSize.width) && Number.isFinite(savedSettingsSize.height)) {
       runtime.settingsSize = {
-        width: Math.min(.9, Math.max(.52, savedSettingsSize.width)),
-        height: Math.min(.94, Math.max(.45, savedSettingsSize.height)),
+        width: Math.min(.96, Math.max(.3, savedSettingsSize.width)),
+        height: Math.min(.96, Math.max(.3, savedSettingsSize.height)),
       };
     }
     setVolume('bgm', savedBgm, false);
@@ -1475,6 +1780,7 @@ async function bootstrap() {
     setRenderScale(savedRenderScale, false, false);
     setTextSpeed(savedTextSpeed, false);
     setTextboxTransparency(savedTextboxTransparency, false);
+    setGameFont(savedGameFont, false);
     renderStats(runtime.manifest);
 
     const [title] = await Promise.all([
@@ -1500,20 +1806,40 @@ startButton.addEventListener('click', async () => {
 });
 
 stage.addEventListener('pointermove', event => {
-  if (runtime.screen !== 'title') return;
-  const next = itemAt(event)?.id || null;
+  const point = logicalPoint(event);
+  let next = null;
+  if (runtime.screen === 'title') next = itemAt(event)?.id || null;
+  else if (runtime.screen === 'omake') next = hitItem(OMAKE_ITEMS, point)?.id || null;
+  else if (runtime.screen === 'omake-cg') next = hitItem(CG_CATEGORY_ITEMS, point)?.id || null;
+  else if (runtime.screen === 'omake-gallery') {
+    if (point.x >= 493 && point.x < 557 && point.y >= 24 && point.y < 56) next = 'mini';
+    else if (point.x >= 567 && point.x < 631 && point.y >= 24 && point.y < 56) next = 'back';
+    else next = CG_SLOTS.findIndex((slot, index) => index < CG_GALLERIES[runtime.omake.category].events.length
+      && point.x >= slot.x && point.x < slot.x + 114 && point.y >= slot.y && point.y < slot.y + 85);
+    if (next === -1) next = null;
+  } else if (runtime.screen === 'omake-music') next = hitItem(musicHitboxes(), point)?.id ?? null;
+  else return;
   stage.style.cursor = next ? 'pointer' : 'default';
+  if (next === 0) stage.style.cursor = 'pointer';
   if (next !== runtime.hover) {
     runtime.hover = next;
-    drawTitle().catch(reportRuntimeError);
+    if (runtime.screen === 'title') drawTitle().catch(reportRuntimeError);
+    else if (runtime.screen === 'omake') drawOmakeMenu().catch(reportRuntimeError);
+    else if (runtime.screen === 'omake-cg') drawCgCategories().catch(reportRuntimeError);
+    else if (runtime.screen === 'omake-gallery') drawCgGallery().catch(reportRuntimeError);
+    else if (runtime.screen === 'omake-music') drawMusicMode().catch(reportRuntimeError);
   }
 });
 
 stage.addEventListener('pointerleave', () => {
-  if (runtime.screen !== 'title' || runtime.hover === null) return;
+  if (!['title', 'omake', 'omake-cg', 'omake-gallery', 'omake-music'].includes(runtime.screen) || runtime.hover === null) return;
   runtime.hover = null;
   stage.style.cursor = 'default';
-  drawTitle().catch(reportRuntimeError);
+  if (runtime.screen === 'title') drawTitle().catch(reportRuntimeError);
+  else if (runtime.screen === 'omake') drawOmakeMenu().catch(reportRuntimeError);
+  else if (runtime.screen === 'omake-cg') drawCgCategories().catch(reportRuntimeError);
+  else if (runtime.screen === 'omake-gallery') drawCgGallery().catch(reportRuntimeError);
+  else if (runtime.screen === 'omake-music') drawMusicMode().catch(reportRuntimeError);
 });
 
 stage.addEventListener('click', event => {
@@ -1522,6 +1848,48 @@ stage.addEventListener('click', event => {
   } else if (runtime.screen === 'title') {
     const item = itemAt(event);
     if (item) activateTitleItem(item.id).catch(reportRuntimeError);
+  } else if (runtime.screen === 'omake') {
+    const item = hitItem(OMAKE_ITEMS, logicalPoint(event));
+    if (item?.id === 'cg') enterCgCategories().catch(reportRuntimeError);
+    else if (item?.id === 'music') enterMusicMode().catch(reportRuntimeError);
+    else if (item?.id === 'back') leaveOmakeScreen().catch(reportRuntimeError);
+  } else if (runtime.screen === 'omake-cg') {
+    const item = hitItem(CG_CATEGORY_ITEMS, logicalPoint(event));
+    if (item) enterCgGallery(item.id).catch(reportRuntimeError);
+  } else if (runtime.screen === 'omake-gallery') {
+    const point = logicalPoint(event);
+    if (point.x >= 493 && point.x < 557 && point.y >= 24 && point.y < 56) {
+      showMiniWindow().catch(reportRuntimeError);
+    } else if (point.x >= 567 && point.x < 631 && point.y >= 24 && point.y < 56) {
+      leaveOmakeScreen().catch(reportRuntimeError);
+    } else {
+      const index = CG_SLOTS.findIndex((slot, slotIndex) => slotIndex < CG_GALLERIES[runtime.omake.category].events.length
+        && point.x >= slot.x && point.x < slot.x + 114 && point.y >= slot.y && point.y < slot.y + 85);
+      const gallery = CG_GALLERIES[runtime.omake.category];
+      if (index >= 0 && slotUnlocked(gallery, index)) {
+        const names = [gallery.events[index], ...(gallery.variants?.[index] || [])
+          .filter(variant => runtime.globalFlags[variant.flag]).map(variant => variant.name)];
+        showCgAsset(names[0], 'event', names, 0).catch(reportRuntimeError);
+      }
+    }
+  } else if (runtime.screen === 'omake-viewer') {
+    const viewer = runtime.omake.viewer;
+    if (viewer.index + 1 < viewer.names.length) {
+      const index = viewer.index + 1;
+      showCgAsset(viewer.names[index], viewer.kind, viewer.names, index).catch(reportRuntimeError);
+    } else leaveOmakeScreen().catch(reportRuntimeError);
+  } else if (runtime.screen === 'omake-mini') {
+    const { unlocked } = runtime.omake.viewer;
+    runtime.omake.miniIndex = (runtime.omake.miniIndex + 1) % unlocked.length;
+    showMiniWindow().catch(reportRuntimeError);
+  } else if (runtime.screen === 'omake-music') {
+    const item = hitItem(musicHitboxes(), logicalPoint(event));
+    if (Number.isInteger(item?.id)) {
+      playMusic(MUSIC_TRACKS[item.id].name).then(drawMusicMode).catch(reportRuntimeError);
+    } else if (item?.id === 'stop') {
+      stopMusic();
+      drawMusicMode().catch(reportRuntimeError);
+    } else if (item?.id === 'exit') leaveOmakeScreen().catch(reportRuntimeError);
   }
 });
 
@@ -1546,15 +1914,12 @@ backlogButton.addEventListener('click', () => {
 });
 skipButton.addEventListener('click', toggleSkip);
 settingsButton.addEventListener('click', () => {
-  setSkipMode(false);
-  backlogPopup.hidden = true;
-  settingsPopup.hidden = !settingsPopup.hidden;
-  if (!settingsPopup.hidden) requestAnimationFrame(applySettingsSize);
+  if (settingsPopup.hidden) openSettings();
+  else closeSettings();
 });
-for (const popup of [backlogPopup, settingsPopup]) {
-  popup.addEventListener('click', event => event.stopPropagation());
-  popup.querySelector('[data-popup-close]').addEventListener('click', () => { popup.hidden = true; });
-}
+for (const popup of [backlogPopup, settingsPopup]) popup.addEventListener('click', event => event.stopPropagation());
+backlogPopup.querySelector('[data-popup-close]').addEventListener('click', () => { backlogPopup.hidden = true; });
+settingsPopup.querySelector('[data-popup-close]').addEventListener('click', closeSettings);
 resetBacklogSize.addEventListener('click', event => {
   event.stopPropagation();
   resetBacklogWindow();
@@ -1573,9 +1938,11 @@ function handleSecondaryAction() {
   if (!backlogPopup.hidden) {
     backlogPopup.hidden = true;
   } else if (!settingsPopup.hidden) {
-    settingsPopup.hidden = true;
+    closeSettings();
   } else if (!saveDialog.open && runtime.screen === 'prologue' && runtime.vm?.waiting) {
     setMessageInterfaceHidden(!runtime.messageInterfaceHidden);
+  } else if (runtime.screen.startsWith('omake')) {
+    leaveOmakeScreen().catch(reportRuntimeError);
   }
 }
 
@@ -1609,6 +1976,7 @@ textSpeed.addEventListener('input', () => setTextSpeed(textSpeed.value, false));
 textSpeed.addEventListener('change', () => setTextSpeed(textSpeed.value, true));
 textboxTransparency.addEventListener('input', () => setTextboxTransparency(textboxTransparency.value, false));
 textboxTransparency.addEventListener('change', () => setTextboxTransparency(textboxTransparency.value, true));
+gameFont.addEventListener('change', () => setGameFont(gameFont.value, true));
 for (const [kind, input] of [['bgm', bgmVolume], ['voice', voiceVolume], ['effect', effectVolume]]) {
   input.addEventListener('input', () => setVolume(kind, input.value, false));
   input.addEventListener('change', () => setVolume(kind, input.value, true));
@@ -1677,8 +2045,7 @@ for (const button of document.querySelectorAll('[data-system-action]')) {
         enterTitle().catch(reportRuntimeError);
       }
     } else if (action === 'close') {
-      window.close();
-      runtime.setState('ready', 'Close this browser tab to exit');
+      setMessageInterfaceHidden(true);
     }
   });
 }
@@ -1700,9 +2067,15 @@ function setInspector(open) {
 toggleInspector.addEventListener('click', () => setInspector(inspector.hidden));
 closeInspector.addEventListener('click', () => setInspector(false));
 window.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !backlogPopup.hidden) {
+  if (event.key === 'Escape' && !settingsPopup.hidden) {
+    event.preventDefault();
+    closeSettings();
+  } else if (event.key === 'Escape' && !backlogPopup.hidden) {
     event.preventDefault();
     backlogPopup.hidden = true;
+  } else if (event.key === 'Escape' && runtime.screen.startsWith('omake')) {
+    event.preventDefault();
+    leaveOmakeScreen().catch(reportRuntimeError);
   } else if (event.key === 'F12') {
     event.preventDefault();
     setInspector(inspector.hidden);

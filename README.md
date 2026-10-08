@@ -130,6 +130,10 @@ data for `127.0.0.1:8787` also clears these preservation-runtime save slots.
 The Settings popup can export all slots, global read history, and runtime
 settings to a portable JSON archive and import that archive in another browser.
 
+The bundled Mincho and MS Gothic-style settings use game-character subsets of
+Noto Serif CJK JP and Noto Sans Mono CJK JP. They are distributed under the
+SIL Open Font License 1.1; its text is included at `web/fonts/OFL-1.1.txt`.
+
 ## Browser requirements
 
 A current Firefox, Chromium, or Safari release is recommended. No files are

@@ -561,9 +561,11 @@ export class LienVM {
     target.clearRect(0, 0, destination.width, destination.height);
     target.drawImage(finalFrame, 0, 0);
     this.markSurfaceDirty(0);
-    const cleanView = this.surface(CLEAN_VIEW_SURFACE, destination.width, destination.height);
-    cleanView.getContext('2d').drawImage(finalFrame, 0, 0);
-    this.markSurfaceDirty(CLEAN_VIEW_SURFACE);
+    // Surface 1 contains the complete presentation frame, including the
+    // original toolbar and face portrait. Its background/character layers
+    // have already been mirrored into CLEAN_VIEW_SURFACE by the individual
+    // non-interface blits used to construct it. Do not replace that clean
+    // composite with the interface-bearing transition target.
     this.present();
     this.onTransition({ ...diagnostic, phase: 'end', timing });
   }
