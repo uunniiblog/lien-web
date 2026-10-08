@@ -105,6 +105,7 @@ export class LienVM {
     this.onTransition = options.onTransition || (() => {});
     this.onTransitionFrame = options.onTransitionFrame || (() => {});
     this.getExternalState = options.getExternalState || (() => ({}));
+    this.shouldSkipAnimations = options.shouldSkipAnimations || (() => false);
 
     this.scenarios = new Map();
     this.frames = [];
@@ -136,6 +137,8 @@ export class LienVM {
     this.waiting = false;
     this.running = false;
     this.delay = 0;
+    this.animationSkipRequested = false;
+    this.activeAnimation = null;
     this.unsupported = new Set();
     this.effectName = 'YUS_01.wav';
     this.voiceCompletion = Promise.resolve();
@@ -366,9 +369,9 @@ export class LienVM {
 
   async animate(duration, draw) {
     const milliseconds = Math.max(0, Math.min(10000, Number(duration) || 0));
-    if (!milliseconds) {
+    if (!milliseconds || this.animationSkipRequested || this.shouldSkipAnimations()) {
       draw(1);
-      return { elapsed: 0, frames: 1, maxFrameGap: 0 };
+      return { elapsed: 0, frames: 1, maxFrameGap: 0, skipped: true };
     }
     // Establish the first frame before yielding. Otherwise the browser can
     // briefly paint a surface prepared by the script between two transitions.
@@ -378,22 +381,66 @@ export class LienVM {
     let frames = 1;
     let maxFrameGap = 0;
     await new Promise(resolve => {
+      let request = 0;
+      let finished = false;
+      const finish = (drawFinal = true) => {
+        if (finished) return;
+        finished = true;
+        if (request) cancelAnimationFrame(request);
+        if (drawFinal) draw(1);
+        resolve();
+      };
+      const active = { finish: () => finish(true) };
+      this.activeAnimation = active;
       const frame = now => {
+        if (finished) return;
         maxFrameGap = Math.max(maxFrameGap, now - previous);
         previous = now;
         frames += 1;
         const progress = Math.min(1, (now - started) / milliseconds);
         draw(progress);
-        if (progress >= 1) resolve();
-        else requestAnimationFrame(frame);
+        if (progress >= 1) finish(false);
+        else request = requestAnimationFrame(frame);
       };
-      requestAnimationFrame(frame);
+      request = requestAnimationFrame(frame);
+    }).finally(() => {
+      this.activeAnimation = null;
     });
     return {
       elapsed: performance.now() - started,
       frames,
       maxFrameGap,
     };
+  }
+
+  skipActiveAnimation() {
+    if (!this.running || this.waiting) return false;
+    this.animationSkipRequested = true;
+    this.activeAnimation?.finish();
+    return true;
+  }
+
+  clearAnimationSkip() {
+    this.animationSkipRequested = false;
+  }
+
+  async waitAnimationDelay(duration) {
+    const milliseconds = Math.max(0, Math.min(10000, Number(duration) || 0));
+    if (!milliseconds || this.animationSkipRequested || this.shouldSkipAnimations()) return;
+    await new Promise(resolve => {
+      let finished = false;
+      let timer = 0;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      this.activeAnimation = { finish };
+      timer = setTimeout(finish, milliseconds);
+    }).finally(() => {
+      this.activeAnimation = null;
+    });
   }
 
   async preloadFollowingTransitionAssets(frame) {
@@ -608,6 +655,7 @@ export class LienVM {
 
   pauseForDialogue(offset = 0) {
     if (!this.pendingText.length && !this.pendingName) return false;
+    this.clearAnimationSkip();
     this.waiting = true;
     this.refreshGhostAction();
     const text = this.pendingText.join('').replace(/^\n+/u, '');
@@ -876,6 +924,7 @@ export class LienVM {
   }
 
   pauseForChoice(data) {
+    this.clearAnimationSkip();
     const enteringChoice = !this.choice;
     const hoverVariable = word(data);
     const actionVariable = word(data, 2);
@@ -1074,6 +1123,7 @@ export class LienVM {
           .sort((left, right) => left.id - right.id)
           .map(option => ({ ...option }));
         this.choice = { kind: 'command', variable, handlers };
+        this.clearAnimationSkip();
         this.waiting = true;
         this.refreshGhostAction();
         this.onChoice(handlers);
@@ -1307,10 +1357,7 @@ export class LienVM {
           // much faster, so restore its observed pacing without slowing any
           // other scripted wait or transition.
           const tileWipeScale = /^UZU[23]\.isf$/i.test(frame.scenario.name) ? 2 : 1;
-          await new Promise(resolve => setTimeout(
-            resolve,
-            Math.min(this.delay * tileWipeScale, 2000),
-          ));
+          await this.waitAnimationDelay(Math.min(this.delay * tileWipeScale, 2000));
         }
         break;
       case 0xF5: // SAVE_DISABLE / ghost-action mode

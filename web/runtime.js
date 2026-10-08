@@ -1,4 +1,4 @@
-import { LienVM } from './vm.js?v=20261008-27';
+import { LienVM } from './vm.js?v=20261008-29';
 import {
   deleteSave, getSetting, listReadMessages, listSaves, markMessageRead as persistMessageRead,
   putSave, putSetting, exportStoredData, replaceStoredData,
@@ -43,6 +43,7 @@ const voiceVolumeValue = document.querySelector('#voice-volume-value');
 const effectVolumeValue = document.querySelector('#effect-volume-value');
 const renderScale = document.querySelector('#render-scale');
 const renderScaleValue = document.querySelector('#render-scale-value');
+const displayMode = document.querySelector('#display-mode');
 const exportSavesButton = document.querySelector('#export-saves');
 const importSavesButton = document.querySelector('#import-saves');
 const importSavesFile = document.querySelector('#import-saves-file');
@@ -64,7 +65,7 @@ const systemGhostButton = document.querySelector('[data-system-action="ghost"]')
 const SAVE_SLOTS = 20;
 const LOGICAL_WIDTH = 640;
 const LOGICAL_HEIGHT = 480;
-const RUNTIME_BUILD = '20261008-27';
+const RUNTIME_BUILD = '20261008-29';
 const VOICE_PREAMP = 3;
 const DEFAULT_BACKLOG_POSITION = Object.freeze({ x: 0.5, y: 9 / 38 });
 const DEFAULT_SETTINGS = Object.freeze({
@@ -74,6 +75,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   voiceVolume: 100,
   effectVolume: 100,
   renderScale: 1,
+  displayMode: 'windowed',
   textSpeed: 100,
   textboxTransparency: 0,
   gameFont: 'current',
@@ -188,6 +190,7 @@ const runtime = {
   backlogPosition: { ...DEFAULT_BACKLOG_POSITION },
   backlogSize: null,
   settingsSize: null,
+  fullscreenReturnMode: 'windowed',
   omake: { hover: null, category: null, viewer: null, miniIndex: 0 },
   textRevealTimer: null,
   textRevealCharacters: [],
@@ -1006,6 +1009,39 @@ function setRenderScale(value, persist = true, repaint = true) {
   if (persist) putSetting('renderScale', amount).catch(() => {});
 }
 
+function applyBaseDisplayMode(value, persist = true) {
+  const mode = value === 'fit' ? 'fit' : 'windowed';
+  runtime.settings.displayMode = mode;
+  document.body.dataset.displayMode = mode;
+  displayMode.value = mode;
+  if (persist) putSetting('displayMode', mode).catch(() => {});
+  requestAnimationFrame(() => {
+    applyBacklogPosition();
+    applySettingsSize();
+  });
+}
+
+async function setDisplayMode(value, persist = true) {
+  if (value !== 'fullscreen') {
+    runtime.fullscreenReturnMode = value === 'fit' ? 'fit' : 'windowed';
+    applyBaseDisplayMode(value, persist);
+    if (document.fullscreenElement) await document.exitFullscreen();
+    return;
+  }
+  if (!document.fullscreenEnabled) {
+    displayMode.value = runtime.settings.displayMode;
+    runtime.setState('ready', 'Fullscreen is not available in this browser context');
+    return;
+  }
+  runtime.fullscreenReturnMode = runtime.settings.displayMode;
+  try {
+    await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+  } catch (error) {
+    displayMode.value = runtime.settings.displayMode;
+    runtimeLog('fullscreen-error', { message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 function setTextSpeed(value, persist = true) {
   const amount = Math.round(Math.min(100, Math.max(0, Number(value))) / 5) * 5;
   runtime.settings.textSpeed = amount;
@@ -1092,6 +1128,7 @@ function resetRuntimeSettings() {
   setVolume('voice', DEFAULT_SETTINGS.voiceVolume);
   setVolume('effect', DEFAULT_SETTINGS.effectVolume);
   setRenderScale(DEFAULT_SETTINGS.renderScale);
+  applyBaseDisplayMode(DEFAULT_SETTINGS.displayMode);
   setTextSpeed(DEFAULT_SETTINGS.textSpeed);
   setTextboxTransparency(DEFAULT_SETTINGS.textboxTransparency);
   setGameFont(DEFAULT_SETTINGS.gameFont);
@@ -1112,6 +1149,7 @@ function setSkipMode(enabled) {
     clearTimeout(runtime.skipTimer);
     runtime.skipTimer = null;
   }
+  if (enabled) runtime.vm?.skipActiveAnimation();
 }
 
 function scheduleSkip({ wasRead }) {
@@ -1136,6 +1174,7 @@ function toggleSkip() {
 }
 
 function advanceDialogue() {
+  if (runtime.vm?.skipActiveAnimation()) return Promise.resolve();
   if (runtime.messageInterfaceHidden) {
     setMessageInterfaceHidden(false);
     return Promise.resolve();
@@ -1271,6 +1310,7 @@ function makeVM() {
         });
       }
     },
+    shouldSkipAnimations: () => runtime.skipMode,
   });
 }
 
@@ -1732,7 +1772,7 @@ async function openSaveDialog(mode) {
 async function bootstrap() {
   try {
     runtimeLog('bootstrap', { userAgent: navigator.userAgent });
-    const [manifestResponse, readMessages, readOnly, savedContinueVoice, savedBgm, savedVoice, savedEffect, savedBacklogPosition, savedBacklogSize, savedRenderScale, savedTextSpeed, savedTextboxTransparency, savedGameFont, savedSettingsSize, savedGlobalFlags] = await Promise.all([
+    const [manifestResponse, readMessages, readOnly, savedContinueVoice, savedBgm, savedVoice, savedEffect, savedBacklogPosition, savedBacklogSize, savedRenderScale, savedDisplayMode, savedTextSpeed, savedTextboxTransparency, savedGameFont, savedSettingsSize, savedGlobalFlags] = await Promise.all([
       api('/api/manifest'),
       listReadMessages().catch(() => []),
       getSetting('skipReadOnly', true).catch(() => true),
@@ -1743,6 +1783,7 @@ async function bootstrap() {
       getSetting('backlogPosition', { x: 0.5, y: 9 / 38 }).catch(() => ({ x: 0.5, y: 9 / 38 })),
       getSetting('backlogSize', null).catch(() => null),
       getSetting('renderScale', 1).catch(() => 1),
+      getSetting('displayMode', DEFAULT_SETTINGS.displayMode).catch(() => DEFAULT_SETTINGS.displayMode),
       getSetting('textSpeed', DEFAULT_SETTINGS.textSpeed).catch(() => DEFAULT_SETTINGS.textSpeed),
       getSetting('textboxTransparency', DEFAULT_SETTINGS.textboxTransparency).catch(() => DEFAULT_SETTINGS.textboxTransparency),
       getSetting('gameFont', DEFAULT_SETTINGS.gameFont).catch(() => DEFAULT_SETTINGS.gameFont),
@@ -1778,6 +1819,7 @@ async function bootstrap() {
     setVolume('voice', savedVoice, false);
     setVolume('effect', savedEffect, false);
     setRenderScale(savedRenderScale, false, false);
+    applyBaseDisplayMode(savedDisplayMode, false);
     setTextSpeed(savedTextSpeed, false);
     setTextboxTransparency(savedTextboxTransparency, false);
     setGameFont(savedGameFont, false);
@@ -1983,6 +2025,17 @@ for (const [kind, input] of [['bgm', bgmVolume], ['voice', voiceVolume], ['effec
 }
 renderScale.addEventListener('input', () => setRenderScale(renderScale.value, false, true));
 renderScale.addEventListener('change', () => setRenderScale(renderScale.value, true, true));
+displayMode.addEventListener('change', () => {
+  setDisplayMode(displayMode.value, true).catch(reportRuntimeError);
+});
+document.addEventListener('fullscreenchange', () => {
+  if (document.fullscreenElement) {
+    document.body.dataset.displayMode = 'fullscreen';
+    displayMode.value = 'fullscreen';
+  } else {
+    applyBaseDisplayMode(runtime.fullscreenReturnMode || runtime.settings.displayMode, false);
+  }
+});
 exportSavesButton.addEventListener('click', () => exportSaves());
 importSavesButton.addEventListener('click', () => importSavesFile.click());
 importSavesFile.addEventListener('change', () => {

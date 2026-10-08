@@ -365,6 +365,7 @@ button { font: inherit; }
 .settings-section h3 { margin: 0 0 .55cqw; color: var(--gold); font: 600 max(.85rem, 1.35cqw)/1.25 Georgia, "Yu Mincho", serif; letter-spacing: .055em; }
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .65cqw; }
 .settings-grid-single { grid-template-columns: minmax(0, 1fr); }
+.graphics-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sound-settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .text-settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .font-settings-row { margin-top: .65cqw; }
@@ -393,10 +394,41 @@ button { font: inherit; }
 .save-transfer > small { grid-column: 1 / -1; color: var(--muted); font-size: max(.7rem, 1.1cqw); line-height: 1.35; }
 
 @media (max-width: 760px) {
-  .sound-settings-grid, .text-settings-grid { grid-template-columns: 1fr; }
+  .graphics-settings-grid, .sound-settings-grid, .text-settings-grid { grid-template-columns: 1fr; }
   .save-transfer { grid-template-columns: 1fr; }
   .save-transfer > small { grid-column: auto; }
   .select-setting { grid-template-columns: 1fr; }
+}
+
+body[data-display-mode="fit"],
+body[data-display-mode="fullscreen"] { overflow: hidden; }
+
+body[data-display-mode="fit"] .shell,
+body[data-display-mode="fullscreen"] .shell { grid-template-rows: 1fr; }
+
+body[data-display-mode="fit"] .topbar,
+body[data-display-mode="fullscreen"] .topbar { display: none; }
+
+body[data-display-mode="fit"] .workspace,
+body[data-display-mode="fullscreen"] .workspace {
+  width: 100vw;
+  height: 100vh;
+  padding: .5rem;
+  grid-template-rows: minmax(0, 1fr) auto;
+  place-content: center;
+  justify-items: center;
+  overflow: hidden;
+}
+
+body[data-display-mode="fit"] .stage-wrap,
+body[data-display-mode="fullscreen"] .stage-wrap {
+  width: min(calc(100vw - 1rem), calc((100vh - 4.35rem) * 4 / 3)) !important;
+  max-height: calc(100vh - 4.35rem);
+}
+
+body[data-display-mode="fit"] .control-strip,
+body[data-display-mode="fullscreen"] .control-strip {
+  width: min(calc(100vw - 1rem), calc((100vh - 4.35rem) * 4 / 3));
 }
 
 .control-strip { display: flex; gap: .45rem; width: 100%; }
