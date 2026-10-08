@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="theme-color" content="#080a14">
+    <title>Lien — Preservation Runtime</title>
+    <meta name="description" content="Private browser preservation runtime for Lien.">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23080a14'/%3E%3Cpath d='M8 8v16h16' fill='none' stroke='%23e2a1ad' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='22' cy='10' r='4' fill='%23e8d9b7'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/styles.css?v=20261008-12">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="identity">
+          <span class="mark" aria-hidden="true">L</span>
+          <div>
+            <h1>Lien</h1>
+            <p>Preservation runtime</p>
+          </div>
+        </div>
+        <div class="runtime-state" id="runtime-state" role="status">
+          <span class="state-light" aria-hidden="true"></span>
+          <span>Connecting to game data</span>
+        </div>
+        <button class="tool-button" id="toggle-inspector" type="button" aria-expanded="false" aria-controls="inspector">Diagnostics</button>
+      </header>
+
+      <section class="workspace" aria-label="Game workspace">
+        <div class="stage-wrap">
+          <canvas id="stage" width="640" height="480" aria-label="Lien game screen"></canvas>
+          <div class="choice-layer" id="choice-layer" aria-label="Map destinations" hidden></div>
+          <div class="stage-message" id="stage-message">
+            <p class="eyebrow">Original data runtime</p>
+            <h2>Preparing the stage…</h2>
+            <p>The source archives remain untouched.</p>
+          </div>
+          <img class="game-system-bar" id="game-system-bar" src="/api/image/sys_bar.GGD" alt="" hidden>
+          <div class="game-system-actions" id="game-system-actions" hidden>
+            <button type="button" data-system-action="skip" title="Skip messages" aria-label="Skip messages"></button>
+            <button type="button" class="system-ghost-action" data-system-action="ghost" title="Ghost action is not available during this line" aria-label="Perform ghost action" aria-hidden="true" disabled></button>
+            <button type="button" data-system-action="load" title="Load game" aria-label="Load game"></button>
+            <button type="button" data-system-action="title" title="Return to title" aria-label="Return to title"></button>
+            <button type="button" data-system-action="close" title="Close game" aria-label="Close game"></button>
+          </div>
+          <div class="dialogue-box" id="dialogue-box" hidden>
+            <p class="dialogue-name" id="dialogue-name" hidden></p>
+            <p class="dialogue-text" id="dialogue-text"></p>
+            <span class="dialogue-next" aria-hidden="true"></span>
+          </div>
+          <section class="game-popup backlog-popup" id="backlog-popup" aria-labelledby="backlog-title" hidden>
+            <header>
+              <h2 id="backlog-title">Backlog</h2>
+              <span class="backlog-header-actions">
+                <button type="button" id="reset-backlog-size" title="Restore the original backlog window size and position">Reset</button>
+                <button type="button" data-popup-close aria-label="Close backlog">Close</button>
+              </span>
+            </header>
+            <ol class="backlog-list" id="backlog-list" lang="ja"></ol>
+          </section>
+          <section class="game-popup settings-popup" id="settings-popup" aria-labelledby="settings-title" hidden>
+            <header>
+              <h2 id="settings-title">Settings</h2>
+              <span class="settings-header-actions">
+                <button type="button" id="reset-settings" title="Restore the default runtime settings and window size">Reset defaults</button>
+                <button type="button" data-popup-close aria-label="Close settings">Close</button>
+              </span>
+            </header>
+            <div class="settings-content">
+              <section class="settings-section" aria-labelledby="graphics-settings-title">
+                <h3 id="graphics-settings-title">Graphics settings</h3>
+                <div class="settings-grid settings-grid-single">
+                  <label class="slider-setting resolution-row" for="render-scale">
+                    <span><strong>Render resolution</strong><output id="render-scale-value" for="render-scale">1× · 640×480</output></span>
+                    <input type="range" id="render-scale" min="1" max="4" step="0.25" value="1">
+                    <small>Dialogue text remains independently rendered and sharp.</small>
+                  </label>
+                </div>
+              </section>
+
+              <section class="settings-section" aria-labelledby="sound-settings-title">
+                <h3 id="sound-settings-title">Sound settings</h3>
+                <div class="settings-grid sound-settings-grid" aria-label="Audio volume">
+                  <label class="slider-setting" for="bgm-volume">
+                    <span><strong>BGM</strong><output id="bgm-volume-value" for="bgm-volume">65%</output></span>
+                    <input type="range" id="bgm-volume" min="0" max="100" step="1" value="65">
+                  </label>
+                  <label class="slider-setting" for="voice-volume">
+                    <span><strong>Voice</strong><output id="voice-volume-value" for="voice-volume">100%</output></span>
+                    <input type="range" id="voice-volume" min="0" max="100" step="1" value="100">
+                  </label>
+                  <label class="slider-setting" for="effect-volume">
+                    <span><strong>Sound effects</strong><output id="effect-volume-value" for="effect-volume">100%</output></span>
+                    <input type="range" id="effect-volume" min="0" max="100" step="1" value="100">
+                  </label>
+                  <label class="setting-row setting-row-wide">
+                    <input type="checkbox" id="continue-voice" checked>
+                    <span>
+                      <strong>Keep voice playing after advancing</strong>
+                      <small>When disabled, advancing to the next line stops the current voice.</small>
+                    </span>
+                  </label>
+                </div>
+              </section>
+
+              <section class="settings-section" aria-labelledby="text-settings-title">
+                <h3 id="text-settings-title">Text settings</h3>
+                <div class="settings-grid text-settings-grid">
+                  <label class="setting-row">
+                    <input type="checkbox" id="skip-read-only" checked>
+                    <span>
+                      <strong>Skip only previously read text</strong>
+                      <small>Skip stops when it reaches dialogue you have not seen before.</small>
+                    </span>
+                  </label>
+                  <label class="slider-setting" for="text-speed">
+                    <span><strong>Text speed</strong><output id="text-speed-value" for="text-speed">Instant</output></span>
+                    <input type="range" id="text-speed" min="0" max="100" step="5" value="100">
+                    <small>Lower values reveal dialogue more gradually.</small>
+                  </label>
+                  <label class="slider-setting" for="textbox-transparency">
+                    <span><strong>Textbox transparency</strong><output id="textbox-transparency-value" for="textbox-transparency">0%</output></span>
+                    <input type="range" id="textbox-transparency" min="0" max="100" step="1" value="0">
+                    <small>This changes the box only; dialogue text remains fully opaque.</small>
+                  </label>
+                </div>
+              </section>
+
+              <section class="save-transfer" aria-labelledby="save-transfer-title">
+                <strong id="save-transfer-title">Save-data transfer</strong>
+                <div class="save-transfer-actions">
+                  <button type="button" id="export-saves">Export saves</button>
+                  <button type="button" id="import-saves">Import saves</button>
+                </div>
+                <small id="save-transfer-status" role="status" aria-live="polite">Transfers save slots, read history, and runtime settings.</small>
+                <input type="file" id="import-saves-file" accept="application/json,.json" hidden>
+              </section>
+            </div>
+          </section>
+          <button class="start-button" id="start-game" type="button" hidden>Start</button>
+        </div>
+
+        <nav class="control-strip" aria-label="Game controls">
+          <button type="button" data-action="backlog" disabled>Backlog</button>
+          <button type="button" data-action="auto" disabled>Auto</button>
+          <button type="button" data-action="skip" disabled>Skip</button>
+          <div class="control-spacer"></div>
+          <button type="button" data-action="save" disabled>Save</button>
+          <button type="button" data-action="load" disabled>Load</button>
+          <button type="button" data-action="settings" disabled>Settings</button>
+        </nav>
+      </section>
+
+      <aside class="inspector" id="inspector" hidden>
+        <div class="inspector-heading">
+          <div>
+            <p class="eyebrow">Interpreter trace</p>
+            <h2 id="trace-title">START.isf</h2>
+          </div>
+          <button id="close-inspector" type="button" aria-label="Close diagnostics">Close</button>
+        </div>
+        <dl class="archive-stats" id="archive-stats"></dl>
+        <div class="trace" id="trace" aria-live="polite"></div>
+      </aside>
+
+      <dialog class="save-dialog" id="save-dialog" aria-labelledby="save-dialog-title">
+        <form method="dialog" class="save-window">
+          <header class="save-heading">
+            <div>
+              <p class="eyebrow">Preservation data</p>
+              <h2 id="save-dialog-title">Save game</h2>
+            </div>
+            <button class="save-close" value="cancel" aria-label="Close save data">Close</button>
+          </header>
+          <div class="save-tabs" role="tablist" aria-label="Save data mode">
+            <button id="save-tab" type="button" role="tab" aria-selected="true">Save</button>
+            <button id="load-tab" type="button" role="tab" aria-selected="false">Load</button>
+          </div>
+          <p class="save-status" id="save-status" role="status" aria-live="polite"></p>
+          <div class="save-grid" id="save-grid"></div>
+        </form>
+      </dialog>
+    </main>
+    <script type="module" src="/runtime.js?v=20261008-12"></script>
+  </body>
+</html>
