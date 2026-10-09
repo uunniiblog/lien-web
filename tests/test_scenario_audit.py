@@ -152,6 +152,21 @@ class ScenarioAuditTests(unittest.TestCase):
         self.assertEqual(100, assigned_value("G_START.isf", 0x0A))
         self.assertEqual(10, assigned_value("LOAD.isf", 0x10))
 
+    def test_staff_roll_contains_all_authored_credit_cards(self):
+        staff = parse_isf(self.data.archives["ISF"].read("STAFF.isf"))
+        cards = [
+            operation["text"] for operation in staff["operations"]
+            if operation["name"] == "GRAPHICS_LOAD" and operation["text"].startswith("ED-")
+        ]
+        self.assertEqual(
+            ["ED-00", "ED-01", "ED-10", "ED-02", "ED-03", "ED-04",
+             "ED-05", "ED-06", "ED-07", "ED-08", "ED-09", "ED-11"],
+            cards,
+        )
+        names = [operation["name"] for operation in staff["operations"]]
+        self.assertIn("WAIT_START", names)
+        self.assertIn("SCREEN_MOUSE_INPUT", names)
+
 
 if __name__ == "__main__":
     unittest.main()

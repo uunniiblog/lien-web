@@ -170,7 +170,9 @@ export class LienVM {
   }
 
   async start(name) {
-    this.frames = [this.frameFor(await this.scenario(name))];
+    const entryScenario = await this.scenario(name);
+    await this.preloadStaffCredits(entryScenario);
+    this.frames = [this.frameFor(entryScenario)];
     // The browser-native title replaces TITLE.isf, whose New Game path fills
     // the possession-power gauge (variable 0x0A) to 100. LOAD.isf only sets
     // the required action threshold (0x10) to 10, so omitting this title-side
@@ -538,6 +540,27 @@ export class LienVM {
     return detail;
   }
 
+  async preloadStaffCredits(scenario) {
+    if (scenario.name.toUpperCase() !== 'STAFF.ISF') return;
+    const assets = [...new Set(scenario.operations
+      .filter(operation => operation.opcode === 0x56 && operation.text)
+      .map(operation => `${operation.text}.GGD`))];
+    if (!assets.length) return;
+    const started = performance.now();
+    this.onTransition({ phase: 'preload-start', kind: 'staff-roll', assets });
+    const results = await Promise.allSettled(assets.map(name => this.fetchImage(name)));
+    const failed = results.flatMap((result, index) => result.status === 'rejected'
+      ? [{ asset: assets[index], error: String(result.reason) }]
+      : []);
+    this.onTransition({
+      phase: 'preload-end',
+      kind: 'staff-roll',
+      assets,
+      elapsed: performance.now() - started,
+      failed,
+    });
+  }
+
   async fadeDisplayToBlack(duration = 500) {
     const destination = this.surface(0);
     const original = this.canvasCopy(destination);
@@ -691,7 +714,10 @@ export class LienVM {
 
   async run() {
     if (this.waiting || !this.running) return;
-    let budget = 20000;
+    // STAFF's authored credit timer deliberately runs tens of thousands of
+    // tiny wait/poll instructions without pausing for dialogue. Keep a firm
+    // runaway guard, but leave enough headroom for that legitimate sequence.
+    let budget = 100000;
     while (!this.waiting && this.running && budget > 0) {
       budget -= 1;
       const frame = this.current();
@@ -879,6 +905,8 @@ export class LienVM {
       frame.calls = [...(saved.calls || [])];
       this.frames.push(frame);
     }
+    const restoredStaff = this.frames.find(frame => frame.scenario.name.toUpperCase() === 'STAFF.ISF');
+    if (restoredStaff) await this.preloadStaffCredits(restoredStaff.scenario);
     this.variables = new Int32Array(state.variables || 8192);
     // Saves from browser builds before 20261009-46 skipped TITLE.isf and
     // therefore stored an empty possession gauge. Migrate only those saves;
@@ -1146,7 +1174,12 @@ export class LienVM {
         }
         if (/^TUKI_NOW$/i.test(target)) this.setPossessionActive(true);
         else if (/^TUKI_OFF$/i.test(target)) this.setPossessionActive(false);
-        const next = this.frameFor(await this.scenario(target));
+        const nextScenario = await this.scenario(target);
+        // The staff roll alternates twelve full-screen images. Decode them as
+        // one batch while the ending's final frame is still visible, rather
+        // than pausing at each authored crossfade boundary on first play.
+        await this.preloadStaffCredits(nextScenario);
+        const next = this.frameFor(nextScenario);
         this.frames.push(next);
         this.onScenario(next.scenario);
         break;
@@ -1479,6 +1512,15 @@ export class LienVM {
         break;
       }
       case 0x85: // SCREEN_MOUSE_INPUT
+        // STAFF uses this opcode as a non-blocking input poll inside its
+        // 10 ms credit-card timer, not as a map/choice pause. A click/Enter
+        // during the timer sets animationSkipRequested and follows the
+        // script's existing early-exit branch; otherwise the timed loop runs
+        // until the next ED-* card is crossfaded in.
+        if (frame.scenario.name.toUpperCase() === 'STAFF.ISF') {
+          this.setVariable(word(data, 2), this.animationSkipRequested ? 1 : 0);
+          break;
+        }
         // The opcode is used for both map destinations and smaller
         // route-specific click targets.  Treat every occurrence as an input
         // pause; MAP2 gets its normal hitboxes while other scenes use the

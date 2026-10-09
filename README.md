@@ -34,10 +34,7 @@ falls back to the original game data and can be resumed by rerunning the command
 - Added a complete walkthrough of the game, original base taken from: https://web.archive.org/web/20021212073805/http://www5.ocn.ne.jp:80/~misaki-b/kouryaku/lien.htm
 
 ## TODO:
-feat: scene skip (stop at choices)
 Launch without python (For Windows)
-bug: Credits stay still imagine
-bug: skip stop at とりつき
 
 
 ## Run

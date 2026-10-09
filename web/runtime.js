@@ -1,7 +1,7 @@
-import { LienVM } from './vm.js?v=20261009-51';
+import { LienVM } from './vm.js?v=20261009-55';
 import {
   AUTO_ROUTES, autoWalkthroughState, createAutoWalkthrough, resolveAutoDecision,
-} from './auto-walkthrough.js?v=20261009-51';
+} from './auto-walkthrough.js?v=20261009-55';
 import {
   deleteSave, getSetting, listReadMessages, listSaves, markMessageRead as persistMessageRead,
   putSave, putSetting, exportStoredData, replaceStoredData,
@@ -32,6 +32,7 @@ const resetBacklogSize = document.querySelector('#reset-backlog-size');
 const settingsPopup = document.querySelector('#settings-popup');
 const resetSettings = document.querySelector('#reset-settings');
 const skipReadOnly = document.querySelector('#skip-read-only');
+const stopSkipAtGhostAction = document.querySelector('#stop-skip-at-ghost-action');
 const continueVoice = document.querySelector('#continue-voice');
 const textSpeed = document.querySelector('#text-speed');
 const textSpeedValue = document.querySelector('#text-speed-value');
@@ -75,11 +76,12 @@ const SAVE_SLOTS_PER_PAGE = 10;
 const SAVE_PAGES = Math.ceil(SAVE_SLOTS / SAVE_SLOTS_PER_PAGE);
 const LOGICAL_WIDTH = 640;
 const LOGICAL_HEIGHT = 480;
-const RUNTIME_BUILD = '20261009-51';
+const RUNTIME_BUILD = '20261009-55';
 const VOICE_PREAMP = 3;
 const DEFAULT_BACKLOG_POSITION = Object.freeze({ x: 0.5, y: 9 / 38 });
 const DEFAULT_SETTINGS = Object.freeze({
   skipReadOnly: true,
+  stopSkipAtGhostAction: true,
   continueVoice: true,
   bgmVolume: 65,
   voiceVolume: 100,
@@ -1330,6 +1332,8 @@ function closeSettings() {
 function resetRuntimeSettings() {
   runtime.settings.skipReadOnly = DEFAULT_SETTINGS.skipReadOnly;
   skipReadOnly.checked = DEFAULT_SETTINGS.skipReadOnly;
+  runtime.settings.stopSkipAtGhostAction = DEFAULT_SETTINGS.stopSkipAtGhostAction;
+  stopSkipAtGhostAction.checked = DEFAULT_SETTINGS.stopSkipAtGhostAction;
   runtime.settings.continueVoice = DEFAULT_SETTINGS.continueVoice;
   continueVoice.checked = DEFAULT_SETTINGS.continueVoice;
   setVolume('bgm', DEFAULT_SETTINGS.bgmVolume);
@@ -1341,6 +1345,7 @@ function resetRuntimeSettings() {
   setTextboxTransparency(DEFAULT_SETTINGS.textboxTransparency);
   setGameFont(DEFAULT_SETTINGS.gameFont);
   putSetting('skipReadOnly', DEFAULT_SETTINGS.skipReadOnly).catch(() => {});
+  putSetting('stopSkipAtGhostAction', DEFAULT_SETTINGS.stopSkipAtGhostAction).catch(() => {});
   putSetting('continueVoice', DEFAULT_SETTINGS.continueVoice).catch(() => {});
   runtime.settingsSize = null;
   settingsPopup.style.removeProperty('width');
@@ -1382,6 +1387,9 @@ function toggleSkip() {
 }
 
 function advanceDialogue() {
+  // This path is used only by direct player input (canvas/dialogue clicks,
+  // Enter, and Space). Automated skipping advances the VM directly.
+  if (runtime.skipMode) setSkipMode(false);
   if (runtime.vm?.skipActiveAnimation()) return Promise.resolve();
   if (runtime.messageInterfaceHidden) {
     setMessageInterfaceHidden(false);
@@ -1517,6 +1525,10 @@ function makeVM() {
     onGhostActionChange(available) {
       showGhostAction(runtime.autoWalkthrough ? false : available);
       if (available) {
+        if (!runtime.autoWalkthrough && runtime.skipMode && runtime.settings.stopSkipAtGhostAction) {
+          setSkipMode(false);
+          queueMicrotask(() => runtime.setState('ready', 'Skip stopped at a とりつく action'));
+        }
         // Post-scene opportunities wait in SCREEN_MOUSE_INPUT after the
         // dialogue UI has closed. Restore the toolbar so that the authored
         // action can actually be seen and clicked.
@@ -2137,10 +2149,11 @@ async function openSaveDialog(mode) {
 async function bootstrap() {
   try {
     runtimeLog('bootstrap', { userAgent: navigator.userAgent });
-    const [manifestResponse, readMessages, readOnly, savedContinueVoice, savedBgm, savedVoice, savedEffect, savedBacklogPosition, savedBacklogSize, savedRenderScale, savedDisplayMode, savedTextSpeed, savedTextboxTransparency, savedGameFont, savedSettingsSize, savedSaveDialogSize, savedGlobalFlags] = await Promise.all([
+    const [manifestResponse, readMessages, readOnly, savedStopSkipAtGhostAction, savedContinueVoice, savedBgm, savedVoice, savedEffect, savedBacklogPosition, savedBacklogSize, savedRenderScale, savedDisplayMode, savedTextSpeed, savedTextboxTransparency, savedGameFont, savedSettingsSize, savedSaveDialogSize, savedGlobalFlags] = await Promise.all([
       api('/api/manifest'),
       listReadMessages().catch(() => []),
       getSetting('skipReadOnly', true).catch(() => true),
+      getSetting('stopSkipAtGhostAction', true).catch(() => true),
       getSetting('continueVoice', true).catch(() => true),
       getSetting('bgmVolume', 65).catch(() => 65),
       getSetting('voiceVolume', 100).catch(() => 100),
@@ -2161,6 +2174,8 @@ async function bootstrap() {
     runtime.globalFlags = flagBank(savedGlobalFlags);
     runtime.settings.skipReadOnly = Boolean(readOnly);
     skipReadOnly.checked = runtime.settings.skipReadOnly;
+    runtime.settings.stopSkipAtGhostAction = Boolean(savedStopSkipAtGhostAction);
+    stopSkipAtGhostAction.checked = runtime.settings.stopSkipAtGhostAction;
     runtime.settings.continueVoice = Boolean(savedContinueVoice);
     continueVoice.checked = runtime.settings.continueVoice;
     if (savedBacklogPosition && Number.isFinite(savedBacklogPosition.x) && Number.isFinite(savedBacklogPosition.y)) {
@@ -2395,6 +2410,11 @@ document.documentElement.oncontextmenu = event => {
 skipReadOnly.addEventListener('change', () => {
   runtime.settings.skipReadOnly = skipReadOnly.checked;
   putSetting('skipReadOnly', skipReadOnly.checked).catch(() => {});
+});
+
+stopSkipAtGhostAction.addEventListener('change', () => {
+  runtime.settings.stopSkipAtGhostAction = stopSkipAtGhostAction.checked;
+  putSetting('stopSkipAtGhostAction', runtime.settings.stopSkipAtGhostAction).catch(() => {});
 });
 
 continueVoice.addEventListener('change', () => {

@@ -7,7 +7,7 @@
     <title>Lien — Preservation Runtime</title>
     <meta name="description" content="Private browser preservation runtime for Lien.">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23080a14'/%3E%3Cpath d='M8 8v16h16' fill='none' stroke='%23e2a1ad' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='22' cy='10' r='4' fill='%23e8d9b7'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="/styles.css?v=20261009-51">
+    <link rel="stylesheet" href="/styles.css?v=20261009-55">
   </head>
   <body>
     <main class="shell">
@@ -154,6 +154,15 @@
                     <small>This changes the box only; dialogue text remains fully opaque.</small>
                   </label>
                 </div>
+                <div class="settings-grid settings-grid-single">
+                  <label class="setting-row">
+                    <input type="checkbox" id="stop-skip-at-ghost-action" checked>
+                    <span>
+                      <strong>Stop skipping at ghost actions</strong>
+                      <small>Skip stops when とりつく becomes available, so the action cannot be missed.</small>
+                    </span>
+                  </label>
+                </div>
                 <div class="settings-grid settings-grid-single font-settings-row">
                   <label class="select-setting" for="game-font">
                     <span>
@@ -230,6 +239,6 @@
         </form>
       </dialog>
     </main>
-    <script type="module" src="/runtime.js?v=20261009-51"></script>
+    <script type="module" src="/runtime.js?v=20261009-55"></script>
   </body>
 </html>
