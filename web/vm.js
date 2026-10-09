@@ -91,6 +91,8 @@ export class LienVM {
     // without synthesizing pointer events in the browser UI.
     this.onDecisionChange = options.onDecisionChange || (() => {});
     this.onGhostActionChange = options.onGhostActionChange || (() => {});
+    this.onGhostActionDebug = options.onGhostActionDebug || (() => {});
+    this.onPossessionChange = options.onPossessionChange || (() => {});
     this.loadGlobalFlags = options.loadGlobalFlags || (() => new Uint8Array(8192));
     this.saveGlobalFlags = options.saveGlobalFlags || (() => {});
     this.onState = options.onState;
@@ -131,8 +133,13 @@ export class LienVM {
     this.commandOptions = new Map();
     this.commandWindow = { x: 0, y: 0, width: 640, height: 480 };
     this.specialActionMode = false;
+    // Flag 0x50 defaults to zero when GAME.SAV is cleared, so its value alone
+    // cannot distinguish an authored TUKI_ON window from an uninitialised
+    // game. Track whether the script explicitly opened that window.
+    this.ghostActionArmed = false;
     this.ghostActionAvailable = false;
     this.ghostActionBusy = false;
+    this.possessionActive = false;
     this.activePortrait = null;
     this.waiting = false;
     this.running = false;
@@ -164,6 +171,13 @@ export class LienVM {
 
   async start(name) {
     this.frames = [this.frameFor(await this.scenario(name))];
+    // The browser-native title replaces TITLE.isf, whose New Game path fills
+    // the possession-power gauge (variable 0x0A) to 100. LOAD.isf only sets
+    // the required action threshold (0x10) to 10, so omitting this title-side
+    // initialization makes every conditional TUKI_ON gate fail as 0 >= 10.
+    if (this.frames[0].scenario.name.toUpperCase() === 'LOAD.ISF') {
+      this.setVariable(0x0A, 100);
+    }
     this.onScenario(this.frames[0].scenario);
     this.pendingText = [];
     this.pendingName = '';
@@ -180,8 +194,10 @@ export class LienVM {
     this.commandOptions.clear();
     this.commandWindow = { x: 0, y: 0, width: 640, height: 480 };
     this.specialActionMode = false;
+    this.ghostActionArmed = false;
     this.ghostActionBusy = false;
     this.setGhostActionAvailable(false);
+    this.setPossessionActive(false);
     this.activePortrait = null;
     this.waiting = false;
     this.running = true;
@@ -190,6 +206,15 @@ export class LienVM {
 
   current() {
     return this.frames[this.frames.length - 1];
+  }
+
+  halt() {
+    this.frames = [];
+    this.running = false;
+    this.waiting = false;
+    this.choice = null;
+    this.setGhostActionAvailable(false);
+    this.setPossessionActive(false);
   }
 
   decodeValue(value) {
@@ -220,11 +245,39 @@ export class LienVM {
     this.emitDecision('ghost', next, next ? [{ id: 0 }] : []);
   }
 
-  refreshGhostAction() {
-    this.setGhostActionAvailable(
-      this.specialActionMode && this.flags[0x50] === 0 && this.waiting
-        && !this.choice && !this.ghostActionBusy,
-    );
+  setPossessionActive(active) {
+    const next = Boolean(active);
+    if (next === this.possessionActive) return;
+    this.possessionActive = next;
+    this.onPossessionChange(next);
+    this.ghostDebug(next ? 'possession-started' : 'possession-ended');
+  }
+
+  ghostDebug(event, extra = {}) {
+    const frame = this.current();
+    this.onGhostActionDebug({
+      event,
+      scenario: frame?.scenario.name || null,
+      instructionIndex: frame?.ip ?? null,
+      waiting: this.waiting,
+      choiceKind: this.choice?.kind || null,
+      choiceTargets: this.choice?.handlers?.length || 0,
+      armed: this.ghostActionArmed,
+      unavailableFlag: this.flags[0x50],
+      available: this.ghostActionAvailable,
+      busy: this.ghostActionBusy,
+      tableSelection: this.variables[0x46],
+      ...extra,
+    });
+  }
+
+  refreshGhostAction(reason = 'refresh') {
+    const next = this.ghostActionArmed && this.flags[0x50] === 0 && this.waiting
+      && !this.ghostActionBusy;
+    if (next !== this.ghostActionAvailable || reason !== 'refresh') {
+      this.ghostDebug('availability-check', { reason, calculated: next });
+    }
+    this.setGhostActionAvailable(next);
   }
 
   async mergeGlobalFlags() {
@@ -249,10 +302,28 @@ export class LienVM {
   }
 
   async selectGhostAction() {
-    if (!this.ghostActionAvailable || this.ghostActionBusy) return false;
+    this.ghostDebug('selection-attempt');
+    if (!this.ghostActionAvailable || this.ghostActionBusy) {
+      this.ghostDebug('selection-rejected');
+      return false;
+    }
     this.ghostActionBusy = true;
+    this.ghostActionArmed = false;
     this.flags[0x50] = 1;
     this.refreshGhostAction();
+
+    // Several original opportunities (including AF_AK11 and AF_AK14) open
+    // TUKI_ON only after the dialogue subroutine returns, while the scenario
+    // is waiting in SCREEN_MOUSE_INPUT. The toolbar action supersedes that
+    // ordinary continue target, so discard the pending input before entering
+    // TORITUKI instead of requiring there to be no active choice.
+    if (this.choice) {
+      const kind = this.choice.kind === 'command' ? 'dialogue' : 'map';
+      this.choice = null;
+      this.choiceCallback = null;
+      this.onChoiceClose();
+      this.emitDecision(kind, false);
+    }
 
     // The original toolbar dispatches TORITUKI asynchronously while a line
     // is on screen. Its table immediately enters the appropriate B-event;
@@ -268,6 +339,7 @@ export class LienVM {
     const next = this.frameFor(await this.scenario('TORITUKI.isf'));
     this.frames.push(next);
     this.onScenario(next.scenario);
+    this.ghostDebug('selection-dispatched', { target: next.scenario.name });
     this.waiting = false;
     try {
       await this.run();
@@ -764,6 +836,9 @@ export class LienVM {
       unsupported: [...this.unsupported],
       effectName: this.effectName,
       specialActionMode: this.specialActionMode,
+      ghostActionArmed: this.ghostActionArmed,
+      possessionActive: this.possessionActive,
+      nativeTitleInitialization: 1,
       externalState: { ...this.getExternalState() },
     };
     snapshot.surfaces = await Promise.all(surfaceCaptures.map(async capture => ({
@@ -775,6 +850,12 @@ export class LienVM {
 
   async importState(state) {
     if (!state || state.version !== 1) throw new Error('This save uses an unsupported format');
+    // A restore replaces the current input context completely. Clear its DOM
+    // and decision notifications before any asynchronous scenario/image work;
+    // a choice contained in the restored state is rendered again below.
+    this.onChoiceClose();
+    this.emitDecision('dialogue', false);
+    this.emitDecision('map', false);
     this.running = false;
     this.waiting = true;
     this.frames = [];
@@ -799,6 +880,13 @@ export class LienVM {
       this.frames.push(frame);
     }
     this.variables = new Int32Array(state.variables || 8192);
+    // Saves from browser builds before 20261009-46 skipped TITLE.isf and
+    // therefore stored an empty possession gauge. Migrate only those saves;
+    // new saves retain a legitimately depleted zero value.
+    if (!state.nativeTitleInitialization && this.variables[0x0A] === 0) {
+      this.setVariable(0x0A, 100);
+      this.migrations.push('native-title-possession-gauge');
+    }
     // Saves made before scripted transition timing was restored contain zero
     // here because the browser-native title bypassed TITLE.isf initialization.
     if (this.variables[0x20] <= 0) this.variables[0x20] = 8;
@@ -870,14 +958,19 @@ export class LienVM {
     // Saves made before ghost-action support did not serialize this field;
     // MAIN mirrors the mode in flag 0x56, so use it as the migration source.
     this.specialActionMode = Boolean(state.specialActionMode ?? this.flags[0x56]);
+    // Old saves did not persist this transient state. Leave those disarmed;
+    // the next authored TUKI_ON call will open the correct action window.
+    this.ghostActionArmed = Boolean(state.ghostActionArmed);
+    this.possessionActive = Boolean(state.possessionActive);
+    this.onPossessionChange(this.possessionActive);
     this.ghostActionBusy = false;
     this.running = Boolean(state.running);
     this.waiting = Boolean(state.waiting);
-    this.refreshGhostAction();
     this.present();
     if (this.current()) this.onScenario(this.current().scenario);
     if (this.waiting && this.choice) {
       this.onDialogueClose();
+      this.refreshGhostAction();
       this.onChoice(this.choice.handlers);
       this.emitDecision(
         this.choice.kind === 'command' ? 'dialogue' : 'map',
@@ -887,6 +980,7 @@ export class LienVM {
       this.onState('choice', `${this.current()?.scenario.name || 'Saved game'} · choose a destination`);
     } else if (this.waiting && this.dialoguePages.length) {
       this.onDialogue(this.pendingName, this.dialoguePages[this.dialoguePage]);
+      this.refreshGhostAction();
       if (this.pendingVoice) {
         this.voiceCompletion = Promise.resolve(this.playVoice(this.pendingVoice));
       }
@@ -894,6 +988,7 @@ export class LienVM {
       this.onDialogueReady({ id: this.currentMessageId, wasRead: this.currentMessageWasRead });
     } else {
       this.onDialogueClose();
+      this.refreshGhostAction();
       await this.run();
     }
   }
@@ -939,6 +1034,11 @@ export class LienVM {
     const active = MAP_DESTINATION_HITBOXES
       .map((bounds, id) => ({ bounds, id, value: this.variables[0xDD + id] }))
       .filter(item => item.value && item.bounds[2] > item.bounds[0]);
+    const isSchoolMap = this.current()?.scenario.name.toUpperCase() === 'MAP2.ISF' && count === 11;
+    if (isSchoolMap && active.length) {
+      const activeIds = new Set(active.map(item => item.id));
+      handlers.forEach(handler => { handler.enabled = activeIds.has(handler.id); });
+    }
     const inheritedFullScreenHandler = handlers.length === 1
       && handlers[0].x1 === 0 && handlers[0].y1 === 0
       && handlers[0].x2 >= 640 && handlers[0].y2 >= 480;
@@ -948,13 +1048,15 @@ export class LienVM {
         handlers.push({ id, x1, y1, x2, y2, enabled: true });
       }
     }
-    if (handlers.length && !handlers.some(handler => handler.enabled)) {
+    if (!isSchoolMap && handlers.length && !handlers.some(handler => handler.enabled)) {
       handlers.forEach(handler => { handler.enabled = true; });
     }
     this.choice = { kind: 'map', hoverVariable, actionVariable, handlers };
     this.waiting = true;
-    this.refreshGhostAction();
     this.onDialogueClose();
+    // Closing dialogue hides the browser toolbar. Refresh afterwards so a
+    // TUKI_ON window attached to this input pause can restore it.
+    this.refreshGhostAction('screen-input-pause');
     // Hover/clear paths loop back through SCREEN_MOUSE_INPUT. Keep the
     // existing DOM hit targets in place during that loop: rebuilding them
     // underneath a stationary pointer generates another pointerenter and can
@@ -973,6 +1075,7 @@ export class LienVM {
     this.setVariable(this.choice.actionVariable, 0);
     this.choiceBusy = true;
     this.waiting = false;
+    this.refreshGhostAction();
     try {
       // SCREEN_MOUSE_INPUT returns the hovered handler id to the scenario.
       // The following script selects the matching destination plate and then
@@ -992,6 +1095,7 @@ export class LienVM {
       this.setVariable(this.choice.variable, id);
       this.choice = null;
       this.waiting = false;
+      this.refreshGhostAction();
       this.onChoiceClose();
       this.emitDecision('dialogue', false);
       await this.run();
@@ -1001,6 +1105,7 @@ export class LienVM {
     this.variables[this.choice.actionVariable] = 1;
     this.choice = null;
     this.waiting = false;
+    this.refreshGhostAction();
     this.onChoiceClose();
     this.emitDecision('map', false);
     await this.run();
@@ -1013,6 +1118,7 @@ export class LienVM {
     this.setVariable(this.choice.actionVariable, 0);
     this.choiceBusy = true;
     this.waiting = false;
+    this.refreshGhostAction();
     try {
       // The MAP script handles a negative hover index by restoring the blank
       // destination plate, then loops back to SCREEN_MOUSE_INPUT.
@@ -1034,12 +1140,27 @@ export class LienVM {
         break;
       }
       case 0x02: { // LOAD_SUBSCENARIO
-        const next = this.frameFor(await this.scenario(cstring(data)));
+        const target = cstring(data);
+        if (/^TUKI_(?:ON|OFF|NOW|TBL)$/i.test(target) || /^TORITUKI$/i.test(target)) {
+          this.ghostDebug('script-load', { target, offset: operation.offset });
+        }
+        if (/^TUKI_NOW$/i.test(target)) this.setPossessionActive(true);
+        else if (/^TUKI_OFF$/i.test(target)) this.setPossessionActive(false);
+        const next = this.frameFor(await this.scenario(target));
         this.frames.push(next);
         this.onScenario(next.scenario);
         break;
       }
       case 0x03:
+        if (frame.scenario.operations.some(item => (
+          item.opcode === 0x02 && String(item.text || '').toUpperCase() === 'TUKI_ON'
+        ))) {
+          this.ghostDebug('ghost-capable-scenario-return', {
+            offset: operation.offset,
+            remainingInstructionIndex: frame.ip,
+          });
+        }
+        if (frame.scenario.name.toUpperCase() === 'TORITUKI.ISF') this.setPossessionActive(false);
         this.frames.pop();
         if (this.current()) this.onScenario(this.current().scenario);
         break;
@@ -1139,7 +1260,12 @@ export class LienVM {
         const index = word(data);
         if (data[2] === 2) this.flags[index] ^= 1;
         else this.flags[index] = data[2] ? 1 : 0;
-        if (index === 0x50) this.refreshGhostAction();
+        if (index === 0x50) {
+          // TUKI_ON clears this flag; TUKI_OFF and TORITUKI set it. This is
+          // the original action-window protocol and is independent of F5.
+          this.ghostActionArmed = this.flags[index] === 0;
+          this.refreshGhostAction('flag-0x50');
+        }
         break;
       }
       case 0x32: { // FLAGS_SET
@@ -1149,7 +1275,10 @@ export class LienVM {
           if (data[4] === 2) this.flags[index] ^= 1;
           else this.flags[index] = data[4] ? 1 : 0;
         }
-        if (start <= 0x50 && end > 0x50) this.refreshGhostAction();
+        if (start <= 0x50 && end > 0x50) {
+          this.ghostActionArmed = this.flags[0x50] === 0;
+          this.refreshGhostAction();
+        }
         break;
       }
       case 0x33:
@@ -1221,9 +1350,28 @@ export class LienVM {
       }
       case 0x47: { // IF
         for (let offset = 0; offset + 9 < data.length; offset += 10) {
-          if (!this.compare(this.value(data, offset), data[offset + 4], this.value(data, offset + 5))) break;
+          const left = this.value(data, offset);
+          const operator = data[offset + 4];
+          const right = this.value(data, offset + 5);
+          const passed = this.compare(left, operator, right);
           const action = data[offset + 9];
-          if (action === 0 && offset + 11 < data.length) this.jump(frame, word(data, offset + 10));
+          const jumpIndex = action === 0 && offset + 11 < data.length ? word(data, offset + 10) : null;
+          if (jumpIndex === 1 && frame.scenario.operations.some(item => (
+            item.opcode === 0x02 && String(item.text || '').toUpperCase() === 'TUKI_ON'
+          ))) {
+            this.ghostDebug('possession-gate', {
+              offset: operation.offset,
+              leftVariable: dword(data, offset) & 0x7fffffff,
+              left,
+              operator,
+              rightVariable: dword(data, offset + 5) & 0x7fffffff,
+              right,
+              passed,
+              jumpIndex,
+            });
+          }
+          if (!passed) break;
+          if (action === 0 && offset + 11 < data.length) this.jump(frame, jumpIndex);
           else if (action === 1 && offset + 15 < data.length) this.setVariable(word(data, offset + 10), this.value(data, offset + 12));
           if (action !== 2) break;
         }
@@ -1360,9 +1508,8 @@ export class LienVM {
           await this.waitAnimationDelay(Math.min(this.delay * tileWipeScale, 2000));
         }
         break;
-      case 0xF5: // SAVE_DISABLE / ghost-action mode
+      case 0xF5: // SAVE_DISABLE
         this.specialActionMode = Boolean(data[0]);
-        this.refreshGhostAction();
         break;
       default:
         this.unsupported.add(operation.name);

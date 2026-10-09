@@ -7,7 +7,7 @@
     <title>Lien — Preservation Runtime</title>
     <meta name="description" content="Private browser preservation runtime for Lien.">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23080a14'/%3E%3Cpath d='M8 8v16h16' fill='none' stroke='%23e2a1ad' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='22' cy='10' r='4' fill='%23e8d9b7'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="/styles.css?v=20261008-29">
+    <link rel="stylesheet" href="/styles.css?v=20261009-51">
   </head>
   <body>
     <main class="shell">
@@ -37,6 +37,7 @@
           </div>
           <img class="game-system-bar" id="game-system-bar" src="/api/image/sys_bar.GGD" alt="" hidden>
           <div class="game-system-actions" id="game-system-actions" hidden>
+            <img class="ghost-action-status" id="ghost-action-status" src="/api/image/KA.GGD" alt="" hidden>
             <button type="button" data-system-action="skip" title="Skip messages" aria-label="Skip messages"></button>
             <button type="button" class="system-ghost-action" data-system-action="ghost" title="Ghost action is not available during this line" aria-label="Perform ghost action" aria-hidden="true" disabled></button>
             <button type="button" data-system-action="load" title="Load game" aria-label="Load game"></button>
@@ -49,6 +50,23 @@
             <span class="dialogue-next" aria-hidden="true"></span>
           </div>
           <div class="transition-cover" id="transition-cover" aria-hidden="true" hidden></div>
+          <button class="auto-walkthrough-button" id="auto-walkthrough-button" type="button" hidden>Auto Walkthrough</button>
+          <section class="auto-route-picker" id="auto-route-picker" role="dialog" aria-modal="true" aria-labelledby="auto-route-title" hidden>
+            <header>
+              <div>
+                <p class="eyebrow">Automatic route decisions</p>
+                <h2 id="auto-route-title">Choose a good ending</h2>
+              </div>
+              <button type="button" id="close-auto-route" aria-label="Close route selection">Close</button>
+            </header>
+            <p>Dialogue choices, map destinations, and timed ghost actions will be selected automatically. Dialogue still plays normally.</p>
+            <div class="auto-route-grid" lang="ja">
+              <button type="button" data-auto-route="minamo"><strong>笹木 みなも</strong><small>GOOD END</small></button>
+              <button type="button" disabled><strong>鷹取 晶</strong><small>Coming later</small></button>
+              <button type="button" disabled><strong>近衛 柚</strong><small>Coming later</small></button>
+              <button type="button" disabled><strong>楠 若葉＆青葉</strong><small>Coming later</small></button>
+            </div>
+          </section>
           <section class="game-popup backlog-popup" id="backlog-popup" aria-labelledby="backlog-title" hidden>
             <header>
               <h2 id="backlog-title">Backlog</h2>
@@ -208,9 +226,10 @@
           </div>
           <p class="save-status" id="save-status" role="status" aria-live="polite"></p>
           <div class="save-grid" id="save-grid"></div>
+          <nav class="save-pages" id="save-pages" aria-label="Save slot pages"></nav>
         </form>
       </dialog>
     </main>
-    <script type="module" src="/runtime.js?v=20261008-29"></script>
+    <script type="module" src="/runtime.js?v=20261009-51"></script>
   </body>
 </html>

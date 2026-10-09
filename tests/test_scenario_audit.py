@@ -129,6 +129,28 @@ class ScenarioAuditTests(unittest.TestCase):
         ]
         self.assertEqual(12, len(alternate_events))
         self.assertTrue(all(name.endswith("B") for name in alternate_events), alternate_events)
+        for name in alternate_events:
+            alternate = parse_isf(self.data.archives["ISF"].read(f"{name}.isf"))
+            loads = [
+                operation["text"] for operation in alternate["operations"]
+                if operation["name"] == "LOAD_SUBSCENARIO"
+            ]
+            self.assertIn("TUKI_NOW", loads, name)
+
+    def test_title_initializes_possession_gauge_above_load_threshold(self):
+        def assigned_value(name, variable):
+            scenario = parse_isf(self.data.archives["ISF"].read(name))
+            for operation in scenario["operations"]:
+                if operation["name"] != "VARIABLE_SET":
+                    continue
+                raw = bytes.fromhex(operation["dataHex"])
+                if int.from_bytes(raw[:2], "little") == variable:
+                    return int.from_bytes(raw[2:6], "little")
+            return None
+
+        self.assertEqual(100, assigned_value("TITLE.isf", 0x0A))
+        self.assertEqual(100, assigned_value("G_START.isf", 0x0A))
+        self.assertEqual(10, assigned_value("LOAD.isf", 0x10))
 
 
 if __name__ == "__main__":

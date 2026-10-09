@@ -1,4 +1,7 @@
-import { LienVM } from './vm.js?v=20261008-29';
+import { LienVM } from './vm.js?v=20261009-51';
+import {
+  AUTO_ROUTES, autoWalkthroughState, createAutoWalkthrough, resolveAutoDecision,
+} from './auto-walkthrough.js?v=20261009-51';
 import {
   deleteSave, getSetting, listReadMessages, listSaves, markMessageRead as persistMessageRead,
   putSave, putSetting, exportStoredData, replaceStoredData,
@@ -54,6 +57,7 @@ const saveTab = document.querySelector('#save-tab');
 const loadTab = document.querySelector('#load-tab');
 const saveStatus = document.querySelector('#save-status');
 const saveGrid = document.querySelector('#save-grid');
+const savePages = document.querySelector('#save-pages');
 const saveButton = document.querySelector('[data-action="save"]');
 const loadButton = document.querySelector('[data-action="load"]');
 const backlogButton = document.querySelector('[data-action="backlog"]');
@@ -61,11 +65,17 @@ const skipButton = document.querySelector('[data-action="skip"]');
 const settingsButton = document.querySelector('[data-action="settings"]');
 const systemSkipButton = document.querySelector('[data-system-action="skip"]');
 const systemGhostButton = document.querySelector('[data-system-action="ghost"]');
+const ghostActionStatus = document.querySelector('#ghost-action-status');
+const autoWalkthroughButton = document.querySelector('#auto-walkthrough-button');
+const autoRoutePicker = document.querySelector('#auto-route-picker');
+const closeAutoRoute = document.querySelector('#close-auto-route');
 
-const SAVE_SLOTS = 20;
+const SAVE_SLOTS = 200;
+const SAVE_SLOTS_PER_PAGE = 10;
+const SAVE_PAGES = Math.ceil(SAVE_SLOTS / SAVE_SLOTS_PER_PAGE);
 const LOGICAL_WIDTH = 640;
 const LOGICAL_HEIGHT = 480;
-const RUNTIME_BUILD = '20261008-29';
+const RUNTIME_BUILD = '20261009-51';
 const VOICE_PREAMP = 3;
 const DEFAULT_BACKLOG_POSITION = Object.freeze({ x: 0.5, y: 9 / 38 });
 const DEFAULT_SETTINGS = Object.freeze({
@@ -180,6 +190,8 @@ const runtime = {
   executionTrace: [],
   vm: null,
   saveMode: 'save',
+  savePage: 0,
+  saveDialogSize: null,
   previewUrls: [],
   readMessages: new Set(),
   globalFlags: new Uint8Array(8192),
@@ -197,11 +209,180 @@ const runtime = {
   textRevealIndex: 0,
   messageInterfaceHidden: false,
   releaseCoverOnTransition: false,
+  autoWalkthrough: null,
+  autoDecisionTimer: null,
+  endingTitleHandoff: false,
+  lastRouteDebugSnapshot: null,
+  ghostDebugTrace: [],
+  ghostActionAvailable: false,
+  possessionActive: false,
   setState(kind, message) {
     stateNode.className = `runtime-state ${kind}`;
     stateNode.lastElementChild.textContent = message;
   },
 };
+
+function hideAutoRoutePicker() {
+  autoRoutePicker.hidden = true;
+}
+
+function setTitleAutoWalkthroughVisible(visible) {
+  autoWalkthroughButton.hidden = !visible;
+  if (!visible) hideAutoRoutePicker();
+}
+
+function restoreAutoWalkthrough(saved) {
+  runtime.autoWalkthrough = saved?.routeId ? createAutoWalkthrough(saved.routeId, saved) : null;
+}
+
+function routeDebugSnapshot(reason, extra = {}) {
+  const vm = runtime.vm;
+  const previous = runtime.lastRouteDebugSnapshot;
+  const setFlags = [];
+  const setGlobalFlags = [];
+  if (vm?.flags) {
+    for (let index = 0; index < vm.flags.length; index += 1) {
+      if (vm.flags[index]) setFlags.push(index);
+    }
+  }
+  for (let index = 0; index < runtime.globalFlags.length; index += 1) {
+    if (runtime.globalFlags[index]) setGlobalFlags.push(index);
+  }
+  return {
+    reason,
+    scenario: vm?.current()?.scenario.name || runtime.scenario?.name || null,
+    calendar: {
+      day: vm?.variables?.[0xC8] ?? null,
+      phase: vm?.variables?.[0xC9] ?? null,
+      week: vm?.variables?.[0xCA] ?? null,
+    },
+    routeVariables: {
+      event: vm?.variables?.[0xFF] ?? null,
+      branch: vm?.variables?.[0x100] ?? null,
+      selectedEvent: vm?.variables?.[0x105] ?? null,
+    },
+    ghostAction: {
+      tableSelection: vm?.variables?.[0x46] ?? null,
+      unavailableFlag: vm?.flags?.[0x50] ?? null,
+      armed: vm?.ghostActionArmed ?? null,
+      available: vm?.ghostActionAvailable ?? null,
+    },
+    flags: { size: vm?.flags?.length || 0, set: setFlags },
+    globalFlags: { size: runtime.globalFlags.length, set: setGlobalFlags },
+    progress: autoWalkthroughState(runtime.autoWalkthrough) || previous?.progress || null,
+    choicesMade: runtime.autoWalkthrough?.history?.map(entry => ({ ...entry }))
+      || previous?.choicesMade?.map(entry => ({ ...entry })) || [],
+    ...extra,
+  };
+}
+
+function logRouteDebug(reason, extra = {}) {
+  const snapshot = routeDebugSnapshot(reason, extra);
+  runtime.lastRouteDebugSnapshot = snapshot;
+  runtimeLog('auto-walkthrough-debug', snapshot);
+  return snapshot;
+}
+
+window.dumpLienRouteState = () => {
+  const snapshot = routeDebugSnapshot('manual-console-dump');
+  console.info('[Lien runtime] route state dump', snapshot);
+  return snapshot;
+};
+
+function autoWalkthroughFailure(message, decision) {
+  const route = AUTO_ROUTES[runtime.autoWalkthrough?.routeId];
+  runtimeLog('auto-walkthrough-error', routeDebugSnapshot('decision-error', {
+    route: route?.name,
+    message,
+    decision,
+  }));
+  runtime.autoWalkthrough = null;
+  queueMicrotask(() => runtime.setState('error', `Auto Walkthrough stopped: ${message}`));
+  if (decision?.kind === 'ghost') showGhostAction(decision.available);
+  else if (decision?.available) renderChoices(decision.options);
+}
+
+function scheduleAutoDecision(decision) {
+  if (!runtime.autoWalkthrough || !decision.available) return;
+  const walkthrough = runtime.autoWalkthrough;
+  const route = AUTO_ROUTES[walkthrough.routeId];
+  const result = resolveAutoDecision(
+    walkthrough,
+    decision,
+    runtime.vm?.current()?.scenario.name,
+    {
+      day: runtime.vm?.variables?.[0xC8],
+      phase: runtime.vm?.variables?.[0xC9],
+      week: runtime.vm?.variables?.[0xCA],
+    },
+  );
+  if (result.status === 'error') {
+    autoWalkthroughFailure(result.message, decision);
+    return;
+  }
+  if (result.status === 'ignore' && decision.kind === 'ghost') {
+    logRouteDebug('ghost-opportunity-ignored', { decision });
+  }
+  if (result.status !== 'select') return;
+  if (runtime.autoDecisionTimer !== null) window.clearTimeout(runtime.autoDecisionTimer);
+  runtime.autoDecisionTimer = window.setTimeout(async () => {
+    runtime.autoDecisionTimer = null;
+    if (runtime.autoWalkthrough !== walkthrough || runtime.decisions.get(decision.kind) !== decision) return;
+    const previousGhostPending = walkthrough.ghostPending;
+    const previousStandaloneGhostDone = walkthrough.standaloneGhostDone;
+    const previousMapIndex = walkthrough.mapIndex;
+    const historyLength = walkthrough.history.length;
+    if (result.counter) walkthrough[result.counter] += 1;
+    if (result.mapIndexValue !== null && result.mapIndexValue !== undefined) {
+      walkthrough.mapIndex = result.mapIndexValue;
+    }
+    if (result.expected?.ghost !== undefined) walkthrough.ghostPending = Boolean(result.expected.ghost);
+    if (result.consumeGhost) walkthrough.ghostPending = false;
+    if (result.consumeStandaloneGhost) walkthrough.standaloneGhostDone = true;
+    walkthrough.history.push({
+      sequence: walkthrough.history.length + 1,
+      kind: decision.kind,
+      selection: result.label,
+      selectedId: result.id,
+      expectedId: result.expected?.id ?? null,
+      forced: Boolean(result.forced),
+      scenario: runtime.vm?.current()?.scenario.name || null,
+      day: runtime.vm?.variables?.[0xC8] ?? null,
+      phase: runtime.vm?.variables?.[0xC9] ?? null,
+    });
+    if (walkthrough.history.length > 256) walkthrough.history.splice(0, walkthrough.history.length - 256);
+    runtimeLog('auto-walkthrough-select', {
+      route: route.name,
+      kind: decision.kind,
+      selection: result.label,
+      fallback: result.fallback || null,
+      forced: Boolean(result.forced),
+      selectedId: result.id,
+      expectedId: result.expected?.id,
+      scenario: runtime.vm?.current()?.scenario.name,
+      progress: autoWalkthroughState(walkthrough),
+    });
+    try {
+      const selected = await runtime.vm?.selectDecision(decision.kind, result.id);
+      if (!selected && result.counter) walkthrough[result.counter] -= 1;
+      if (!selected) {
+        walkthrough.mapIndex = previousMapIndex;
+        walkthrough.ghostPending = previousGhostPending;
+        walkthrough.standaloneGhostDone = previousStandaloneGhostDone;
+        walkthrough.history.length = historyLength;
+      }
+      if (!selected) autoWalkthroughFailure(`Could not select ${result.label}.`, decision);
+      else logRouteDebug('decision-selected', { decision: walkthrough.history.at(-1) });
+    } catch (error) {
+      if (result.counter) walkthrough[result.counter] -= 1;
+      walkthrough.mapIndex = previousMapIndex;
+      walkthrough.ghostPending = previousGhostPending;
+      walkthrough.standaloneGhostDone = previousStandaloneGhostDone;
+      walkthrough.history.length = historyLength;
+      autoWalkthroughFailure(error instanceof Error ? error.message : String(error), decision);
+    }
+  }, 0);
+}
 
 function flagBank(value) {
   const bank = new Uint8Array(8192);
@@ -221,10 +402,26 @@ async function saveGlobalFlags(start, end, values) {
 }
 
 function showGhostAction(available) {
+  runtime.ghostActionAvailable = Boolean(available);
+  renderGhostActionState();
+}
+
+function showPossessionState(active) {
+  runtime.possessionActive = Boolean(active);
+  renderGhostActionState();
+}
+
+function renderGhostActionState() {
+  const available = runtime.ghostActionAvailable && !runtime.possessionActive;
+  ghostActionStatus.hidden = !available && !runtime.possessionActive;
+  ghostActionStatus.src = runtime.possessionActive ? '/api/image/CHUU.GGD' : '/api/image/KA.GGD';
   systemGhostButton.disabled = !available;
   systemGhostButton.classList.toggle('ghost-action-available', available);
-  systemGhostButton.setAttribute('aria-hidden', String(!available));
-  systemGhostButton.title = available
+  systemGhostButton.classList.toggle('possession-active', runtime.possessionActive);
+  systemGhostButton.setAttribute('aria-hidden', String(!available && !runtime.possessionActive));
+  systemGhostButton.title = runtime.possessionActive
+    ? 'Ghost action currently active'
+    : available
     ? 'Ghost action available'
     : 'Ghost action is not available during this line';
 }
@@ -253,7 +450,15 @@ function runtimeLog(event, detail = {}) {
     body: JSON.stringify({ event, detail: payload }),
     keepalive: true,
   }).catch(() => {});
+  return payload;
 }
+
+window.dumpLienGhostTrace = () => {
+  const trace = runtime.ghostDebugTrace.map(entry => ({ ...entry }));
+  const json = JSON.stringify(trace, null, 2);
+  console.info('[Lien runtime] ghost trace dump\n' + json);
+  return json;
+};
 
 function clearTransitionCover() {
   for (const animation of transitionCover.getAnimations()) animation.cancel();
@@ -879,6 +1084,9 @@ async function jumpToBacklogEntry(index, entry, button) {
   stopMusic();
   stopVoice();
   stopEffects();
+  hideChoices();
+  runtime.decisions.clear();
+  restoreAutoWalkthrough(state.externalState?.autoWalkthrough);
   await runtime.vm.importState(state);
   runtime.vm.backlog = retainedBacklog;
   runtime.vm.onBacklogChange(retainedBacklog);
@@ -1237,6 +1445,45 @@ function makeVM() {
     fetchScenario,
     fetchImage: loadImage,
     onScenario(scenario) {
+      // STAFF is the original ending-credit scenario. Automatic route input
+      // must end here; otherwise its generic mouse gates are instantly
+      // selected and TITLE's New Game item is selected immediately afterward.
+      if (scenario.name.toUpperCase() === 'STAFF.ISF' && runtime.autoWalkthrough) {
+        logRouteDebug('credits-start', {
+          route: AUTO_ROUTES[runtime.autoWalkthrough.routeId]?.name,
+          enteringScenario: scenario.name,
+        });
+        runtimeLog('auto-walkthrough-complete', routeDebugSnapshot('credits-start'));
+        restoreAutoWalkthrough(null);
+      }
+      const upperScenario = scenario.name.toUpperCase();
+      if (runtime.autoWalkthrough && (
+        ['NMED.ISF', 'MIBED.ISF', 'MIED.ISF'].includes(upperScenario)
+        || (upperScenario === 'EV_BUNKI.ISF' && runtime.vm?.variables?.[0xC8] >= 28)
+      )) {
+        logRouteDebug(upperScenario === 'EV_BUNKI.ISF' ? 'ending-fork' : 'ending-selected', {
+          enteringScenario: scenario.name,
+        });
+      }
+      if (upperScenario === 'TITLE.ISF' && runtime.screen === 'prologue') {
+        const endingVm = runtime.vm;
+        runtimeLog('ending-title-handoff', routeDebugSnapshot('ending-title-handoff', {
+          enteringScenario: scenario.name,
+        }));
+        endingVm?.halt();
+        if (!runtime.endingTitleHandoff) {
+          runtime.endingTitleHandoff = true;
+          window.setTimeout(() => {
+            if (runtime.vm !== endingVm) {
+              runtime.endingTitleHandoff = false;
+              return;
+            }
+            enterTitle().catch(reportRuntimeError).finally(() => {
+              runtime.endingTitleHandoff = false;
+            });
+          }, 0);
+        }
+      }
       renderTrace(scenario);
       runtimeLog('scenario', {
         name: scenario.name,
@@ -1258,13 +1505,42 @@ function makeVM() {
     },
     onDialogueReady: scheduleSkip,
     onBacklogChange: renderBacklog,
-    onChoice: renderChoices,
+    onChoice(handlers) {
+      if (!runtime.autoWalkthrough) renderChoices(handlers);
+    },
     onChoiceClose: hideChoices,
     onDecisionChange(decision) {
       if (decision.available) runtime.decisions.set(decision.kind, decision);
       else runtime.decisions.delete(decision.kind);
+      if (decision.available) scheduleAutoDecision(decision);
     },
-    onGhostActionChange: showGhostAction,
+    onGhostActionChange(available) {
+      showGhostAction(runtime.autoWalkthrough ? false : available);
+      if (available) {
+        // Post-scene opportunities wait in SCREEN_MOUSE_INPUT after the
+        // dialogue UI has closed. Restore the toolbar so that the authored
+        // action can actually be seen and clicked.
+        if (!runtime.autoWalkthrough && !runtime.messageInterfaceHidden) {
+          systemBar.hidden = false;
+          systemActions.hidden = false;
+        }
+        runtimeLog('ghost-action-window', {
+          scenario: runtime.vm?.current()?.scenario.name || null,
+          day: runtime.vm?.variables?.[0xC8] ?? null,
+          phase: runtime.vm?.variables?.[0xC9] ?? null,
+          tableSelection: runtime.vm?.variables?.[0x46] ?? null,
+          automatic: Boolean(runtime.autoWalkthrough),
+        });
+      }
+    },
+    onGhostActionDebug(detail) {
+      const entry = runtimeLog('ghost-action-debug', detail);
+      runtime.ghostDebugTrace.push(entry);
+      if (runtime.ghostDebugTrace.length > 200) runtime.ghostDebugTrace.splice(0, runtime.ghostDebugTrace.length - 200);
+    },
+    onPossessionChange(active) {
+      showPossessionState(active);
+    },
     loadGlobalFlags: () => runtime.globalFlags,
     saveGlobalFlags,
     onState(kind, message) {
@@ -1281,6 +1557,7 @@ function makeVM() {
     getExternalState: () => ({
       musicName: runtime.musicName,
       musicTime: runtime.music?.currentTime || 0,
+      autoWalkthrough: autoWalkthroughState(runtime.autoWalkthrough),
     }),
     onTrace(event) {
       runtime.executionTrace.push(event);
@@ -1355,6 +1632,7 @@ async function drawOmakeMenu() {
 }
 
 async function enterOmake() {
+  setTitleAutoWalkthroughVisible(false);
   runtime.screen = 'omake';
   runtime.omake = { category: null, viewer: null, miniIndex: 0 };
   runtime.hover = 'cg';
@@ -1498,7 +1776,9 @@ async function enterTitle() {
   clearTransitionCover();
   setSkipMode(false);
   runtime.decisions.clear();
+  restoreAutoWalkthrough(null);
   showGhostAction(false);
+  showPossessionState(false);
   closeGamePopups();
   hideDialogue();
   hideChoices();
@@ -1515,12 +1795,13 @@ async function enterTitle() {
   }));
   await Promise.all([drawTitle(), loadScenario('TITLE.isf')]);
   await playMusic('OP04.WAV');
+  setTitleAutoWalkthroughVisible(true);
   settingsButton.disabled = false;
   loadButton.disabled = false;
   runtime.setState('ready', 'TITLE.isf · interactive title menu');
 }
 
-async function beginNewGame() {
+async function beginNewGame(autoRoute = null) {
   // Keep the title visible until all first-scene data is ready. Fading first
   // would turn ordinary loading time into a conspicuous black-screen stall.
   const warmedScenarios = await warmNewGameAssets().catch(error => {
@@ -1530,8 +1811,11 @@ async function beginNewGame() {
     return [];
   });
   await animateTransitionCover(true, 500, 'new-game');
+  restoreAutoWalkthrough(autoRoute ? { routeId: autoRoute } : null);
+  setTitleAutoWalkthroughVisible(false);
   runtime.decisions.clear();
   showGhostAction(false);
+  showPossessionState(false);
   runtime.screen = 'prologue';
   runtime.hover = null;
   hideMessage();
@@ -1540,7 +1824,8 @@ async function beginNewGame() {
   setInspector(false);
   runtime.setState('', 'Starting original LOAD.isf entry chain');
   runtime.executionTrace = [];
-  runtimeLog('new-game', { entry: 'LOAD.isf' });
+  runtime.ghostDebugTrace = [];
+  runtimeLog('new-game', { entry: 'LOAD.isf', autoRoute });
   runtime.vm = makeVM();
   for (const scenario of warmedScenarios) {
     runtime.vm.scenarios.set(scenario.name.toUpperCase(), Promise.resolve(scenario));
@@ -1622,6 +1907,7 @@ async function saveToSlot(slot) {
       excerpt: runtime.vm.dialoguePages[runtime.vm.dialoguePage] || '',
       musicName: runtime.musicName,
       musicTime: runtime.music?.currentTime || 0,
+      day: runtime.vm.variables?.[0xC8] ?? null,
       preview: await stageBlob(),
       state,
     };
@@ -1644,6 +1930,8 @@ async function loadFromSlot(record) {
     });
     stopMusic();
     stopVoice();
+    hideChoices();
+    runtime.decisions.clear();
     if (!runtime.vm) {
       runtime.vm = makeVM();
       runtime.vm.seedDisplay(stage);
@@ -1651,11 +1939,16 @@ async function loadFromSlot(record) {
     saveDialog.close();
     await animateTransitionCover(true, 350, 'load-save');
     runtime.screen = 'prologue';
+    setTitleAutoWalkthroughVisible(false);
     runtime.hover = null;
     hideMessage();
     startButton.hidden = true;
     const restoreStarted = performance.now();
+    restoreAutoWalkthrough(record.state?.externalState?.autoWalkthrough);
     await runtime.vm.importState(record.state);
+    if (runtime.autoWalkthrough) {
+      logRouteDebug('save-loaded', { slot: record.slot, savedScenario: record.scenario });
+    }
     runtimeLog('load-save-restored', {
       slot: record.slot,
       surfaces: record.state?.surfaces?.length || 0,
@@ -1704,7 +1997,9 @@ async function renderSaveSlots() {
     saveStatus.textContent = `Save data is unavailable: ${error.message}`;
     return;
   }
-  for (let slot = 1; slot <= SAVE_SLOTS; slot += 1) {
+  const firstSlot = runtime.savePage * SAVE_SLOTS_PER_PAGE + 1;
+  const lastSlot = Math.min(SAVE_SLOTS, firstSlot + SAVE_SLOTS_PER_PAGE - 1);
+  for (let slot = firstSlot; slot <= lastSlot; slot += 1) {
     const record = records.get(slot);
     const wrapper = document.createElement('div');
     wrapper.className = 'save-record';
@@ -1713,7 +2008,10 @@ async function renderSaveSlots() {
     button.className = 'save-slot';
     button.disabled = runtime.saveMode === 'load' && !record;
     button.addEventListener('click', () => {
-      if (runtime.saveMode === 'save') saveToSlot(slot);
+      if (runtime.saveMode === 'save') {
+        if (record && !window.confirm(`Overwrite save slot ${slot}? The existing save will be replaced.`)) return;
+        saveToSlot(slot);
+      }
       else if (record) loadFromSlot(record);
     });
     if (record) {
@@ -1727,10 +2025,16 @@ async function renderSaveSlots() {
       title.textContent = `Slot ${slot} · ${record.scenario}`;
       const date = document.createElement('small');
       date.textContent = savedAtLabel(record.timestamp);
+      const day = document.createElement('small');
+      day.className = 'save-calendar';
+      const savedDay = Number.isInteger(record.day)
+        ? record.day
+        : record.state?.variables?.[0xC8];
+      day.textContent = Number.isInteger(savedDay) ? `Day ${savedDay}` : 'Day unavailable';
       const excerpt = document.createElement('small');
       excerpt.lang = 'ja';
       excerpt.textContent = [record.speaker, record.excerpt].filter(Boolean).join(' · ');
-      button.append(preview, title, date, excerpt);
+      button.append(preview, title, date, day, excerpt);
 
       const remove = document.createElement('button');
       remove.type = 'button';
@@ -1753,6 +2057,66 @@ async function renderSaveSlots() {
     }
     saveGrid.append(wrapper);
   }
+  renderSavePages();
+}
+
+function renderSavePages() {
+  savePages.replaceChildren();
+  const previous = document.createElement('button');
+  previous.type = 'button';
+  previous.className = 'save-page-step';
+  previous.textContent = '‹';
+  previous.title = 'Previous save page';
+  previous.disabled = runtime.savePage === 0;
+  previous.addEventListener('click', () => selectSavePage(runtime.savePage - 1));
+  const numbers = document.createElement('div');
+  numbers.className = 'save-page-numbers';
+  for (let page = 0; page < SAVE_PAGES; page += 1) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = String(page + 1);
+    button.title = `Slots ${page * SAVE_SLOTS_PER_PAGE + 1}–${Math.min(SAVE_SLOTS, (page + 1) * SAVE_SLOTS_PER_PAGE)}`;
+    button.setAttribute('aria-current', page === runtime.savePage ? 'page' : 'false');
+    button.addEventListener('click', () => selectSavePage(page));
+    numbers.append(button);
+  }
+  const next = document.createElement('button');
+  next.type = 'button';
+  next.className = 'save-page-step';
+  next.textContent = '›';
+  next.title = 'Next save page';
+  next.disabled = runtime.savePage === SAVE_PAGES - 1;
+  next.addEventListener('click', () => selectSavePage(runtime.savePage + 1));
+  savePages.append(previous, numbers, next);
+  numbers.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+
+function selectSavePage(page) {
+  const next = Math.min(SAVE_PAGES - 1, Math.max(0, page));
+  if (next === runtime.savePage) return;
+  runtime.savePage = next;
+  saveGrid.scrollTop = 0;
+  renderSaveSlots().catch(error => { saveStatus.textContent = error.message; });
+}
+
+function applySaveDialogSize() {
+  if (!saveDialog.open) return;
+  if (!runtime.saveDialogSize) {
+    saveDialog.style.removeProperty('width');
+    saveDialog.style.removeProperty('height');
+    return;
+  }
+  saveDialog.style.width = `${window.innerWidth * runtime.saveDialogSize.width}px`;
+  saveDialog.style.height = `${window.innerHeight * runtime.saveDialogSize.height}px`;
+}
+
+function saveSaveDialogSize() {
+  if (!saveDialog.open) return;
+  runtime.saveDialogSize = {
+    width: Math.min(.98, Math.max(.32, saveDialog.offsetWidth / window.innerWidth)),
+    height: Math.min(.98, Math.max(.4, saveDialog.offsetHeight / window.innerHeight)),
+  };
+  putSetting('saveDialogSizeV2', runtime.saveDialogSize).catch(() => {});
 }
 
 async function openSaveDialog(mode) {
@@ -1766,13 +2130,14 @@ async function openSaveDialog(mode) {
     ? 'Choose a slot. Existing data will be replaced.'
     : 'Choose a saved position to continue.';
   if (!saveDialog.open) saveDialog.showModal();
+  requestAnimationFrame(applySaveDialogSize);
   await renderSaveSlots();
 }
 
 async function bootstrap() {
   try {
     runtimeLog('bootstrap', { userAgent: navigator.userAgent });
-    const [manifestResponse, readMessages, readOnly, savedContinueVoice, savedBgm, savedVoice, savedEffect, savedBacklogPosition, savedBacklogSize, savedRenderScale, savedDisplayMode, savedTextSpeed, savedTextboxTransparency, savedGameFont, savedSettingsSize, savedGlobalFlags] = await Promise.all([
+    const [manifestResponse, readMessages, readOnly, savedContinueVoice, savedBgm, savedVoice, savedEffect, savedBacklogPosition, savedBacklogSize, savedRenderScale, savedDisplayMode, savedTextSpeed, savedTextboxTransparency, savedGameFont, savedSettingsSize, savedSaveDialogSize, savedGlobalFlags] = await Promise.all([
       api('/api/manifest'),
       listReadMessages().catch(() => []),
       getSetting('skipReadOnly', true).catch(() => true),
@@ -1788,6 +2153,7 @@ async function bootstrap() {
       getSetting('textboxTransparency', DEFAULT_SETTINGS.textboxTransparency).catch(() => DEFAULT_SETTINGS.textboxTransparency),
       getSetting('gameFont', DEFAULT_SETTINGS.gameFont).catch(() => DEFAULT_SETTINGS.gameFont),
       getSetting('settingsSize', null).catch(() => null),
+      getSetting('saveDialogSizeV2', null).catch(() => null),
       getSetting('globalFlags', null).catch(() => null),
     ]);
     runtime.manifest = await manifestResponse.json();
@@ -1813,6 +2179,12 @@ async function bootstrap() {
       runtime.settingsSize = {
         width: Math.min(.96, Math.max(.3, savedSettingsSize.width)),
         height: Math.min(.96, Math.max(.3, savedSettingsSize.height)),
+      };
+    }
+    if (savedSaveDialogSize && Number.isFinite(savedSaveDialogSize.width) && Number.isFinite(savedSaveDialogSize.height)) {
+      runtime.saveDialogSize = {
+        width: Math.min(.98, Math.max(.32, savedSaveDialogSize.width)),
+        height: Math.min(.98, Math.max(.4, savedSaveDialogSize.height)),
       };
     }
     setVolume('bgm', savedBgm, false);
@@ -1943,6 +2315,19 @@ stage.addEventListener('wheel', event => {
   }
 }, { passive: false });
 
+autoWalkthroughButton.addEventListener('click', event => {
+  event.stopPropagation();
+  if (runtime.screen === 'title') autoRoutePicker.hidden = false;
+});
+closeAutoRoute.addEventListener('click', hideAutoRoutePicker);
+autoRoutePicker.addEventListener('click', event => {
+  event.stopPropagation();
+  const button = event.target.closest('[data-auto-route]');
+  if (!button || button.disabled) return;
+  hideAutoRoutePicker();
+  beginNewGame(button.dataset.autoRoute).catch(reportRuntimeError);
+});
+
 dialogueBox.addEventListener('click', event => {
   event.stopPropagation();
   advanceDialogue()?.catch(reportRuntimeError);
@@ -1977,7 +2362,9 @@ backlogList.addEventListener('wheel', event => {
   }
 }, { passive: false });
 function handleSecondaryAction() {
-  if (!backlogPopup.hidden) {
+  if (!autoRoutePicker.hidden) {
+    hideAutoRoutePicker();
+  } else if (!backlogPopup.hidden) {
     backlogPopup.hidden = true;
   } else if (!settingsPopup.hidden) {
     closeSettings();
@@ -2081,17 +2468,31 @@ window.addEventListener('pointerup', () => {
     applyBacklogPosition();
   }
   if (!settingsPopup.hidden) saveSettingsSize();
+  if (saveDialog.open) saveSaveDialogSize();
 });
 window.addEventListener('resize', () => {
   applyBacklogPosition();
   applySettingsSize();
+  applySaveDialogSize();
+});
+saveDialog.addEventListener('close', () => {
+  for (const url of runtime.previewUrls) URL.revokeObjectURL(url);
+  runtime.previewUrls = [];
 });
 for (const button of document.querySelectorAll('[data-system-action]')) {
   button.addEventListener('click', event => {
     event.stopPropagation();
     const action = button.dataset.systemAction;
     if (action === 'skip') toggleSkip();
-    else if (action === 'ghost') runtime.vm?.selectDecision('ghost').catch(reportRuntimeError);
+    else if (action === 'ghost') {
+      runtimeLog('ghost-action-click', {
+        scenario: runtime.vm?.current()?.scenario.name || null,
+        day: runtime.vm?.variables?.[0xC8] ?? null,
+        phase: runtime.vm?.variables?.[0xC9] ?? null,
+        tableSelection: runtime.vm?.variables?.[0x46] ?? null,
+      });
+      runtime.vm?.selectDecision('ghost').catch(reportRuntimeError);
+    }
     else if (action === 'load') openSaveDialog('load');
     else if (action === 'title') {
       if (window.confirm('Return to the title screen? Unsaved progress will be lost.')) {
@@ -2120,7 +2521,10 @@ function setInspector(open) {
 toggleInspector.addEventListener('click', () => setInspector(inspector.hidden));
 closeInspector.addEventListener('click', () => setInspector(false));
 window.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !settingsPopup.hidden) {
+  if (event.key === 'Escape' && !autoRoutePicker.hidden) {
+    event.preventDefault();
+    hideAutoRoutePicker();
+  } else if (event.key === 'Escape' && !settingsPopup.hidden) {
     event.preventDefault();
     closeSettings();
   } else if (event.key === 'Escape' && !backlogPopup.hidden) {

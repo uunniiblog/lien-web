@@ -160,15 +160,29 @@ button { font: inherit; }
 
 .game-system-actions {
   position: absolute;
-  z-index: 5;
+  /* Above SCREEN_MOUSE_INPUT's full-screen choice target so the original
+     post-scene ghost-action window remains clickable. */
+  z-index: 7;
   left: 24.21875%;
   top: 70%;
   width: 75.46875%;
   height: 6.0416667%;
 }
 .game-system-actions[hidden] { display: none; }
+.ghost-action-status {
+  position: absolute;
+  z-index: 1;
+  left: 24.64%;
+  top: 17.24%;
+  width: 20.71%;
+  height: 82.76%;
+  pointer-events: none;
+  image-rendering: auto;
+}
+.ghost-action-status[hidden] { display: none; }
 .game-system-actions button {
   position: absolute;
+  z-index: 2;
   top: 8%;
   width: 5.2%;
   height: 84%;
@@ -185,7 +199,12 @@ button { font: inherit; }
   box-shadow: 0 0 .6rem rgba(255, 224, 120, .9), inset 0 0 .35rem rgba(255,255,255,.5);
 }
 .game-system-actions [data-system-action="skip"] { left: 73.8%; }
-.system-ghost-action { left: 79%; }
+.system-ghost-action {
+  /* The ghost face occupies x=226..250 in the 483px SYS_BAR image. The
+     crossed icon near 79% is Save-disabled, not the ghost action. */
+  left: 46.79%;
+  width: 5.8%;
+}
 .game-system-actions .system-ghost-action:disabled {
   cursor: default;
   pointer-events: none;
@@ -201,6 +220,25 @@ button { font: inherit; }
     inset 0 0 .45rem rgba(255, 255, 255, .75);
   animation: ghost-action-pulse 1.05s ease-in-out infinite alternate;
 }
+.game-system-actions .system-ghost-action.possession-active {
+  pointer-events: none;
+  border-color: rgba(210, 225, 232, .8);
+  background: rgba(210, 235, 241, .16);
+}
+.game-system-actions .system-ghost-action.possession-active::before,
+.game-system-actions .system-ghost-action.possession-active::after {
+  content: '';
+  position: absolute;
+  left: -4%;
+  top: 44%;
+  width: 108%;
+  height: 10%;
+  border-radius: 999px;
+  background: #f00016;
+  box-shadow: 0 0 2px rgba(255, 255, 255, .9);
+}
+.game-system-actions .system-ghost-action.possession-active::before { transform: rotate(45deg); }
+.game-system-actions .system-ghost-action.possession-active::after { transform: rotate(-45deg); }
 @keyframes ghost-action-pulse {
   from { filter: brightness(1); transform: scale(1); }
   to { filter: brightness(1.5); transform: scale(1.09); }
@@ -450,9 +488,15 @@ body[data-display-mode="fullscreen"] .control-strip {
 }
 
 .save-dialog {
-  width: min(66rem, calc(100vw - 2rem));
-  max-height: min(48rem, calc(100vh - 2rem));
+  width: min(74rem, calc(100vw - 2rem));
+  height: min(44rem, calc(100vh - 2rem));
+  min-width: min(32rem, calc(100vw - 1rem));
+  min-height: min(28rem, calc(100vh - 1rem));
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100vh - 1rem);
   padding: 0;
+  overflow: hidden;
+  resize: both;
   color: var(--ink);
   border: 1px solid #596078;
   border-radius: .45rem;
@@ -460,10 +504,10 @@ body[data-display-mode="fullscreen"] .control-strip {
   box-shadow: 0 2rem 7rem #000;
 }
 .save-dialog::backdrop { background: rgba(2, 3, 8, .76); backdrop-filter: blur(5px); }
-.save-window { min-height: 20rem; padding: 1.25rem; }
+.save-window { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 1.25rem; }
 .save-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .save-heading h2 { margin: .2rem 0 0; font: 500 1.45rem Georgia, "Yu Mincho", serif; }
-.save-close, .save-tabs button, .save-slot, .save-delete {
+.save-close, .save-tabs button, .save-slot, .save-delete, .save-pages button {
   color: var(--ink);
   border: 1px solid var(--line);
   background: var(--panel);
@@ -475,7 +519,7 @@ body[data-display-mode="fullscreen"] .control-strip {
 .save-tabs button { min-width: 6rem; min-height: 2.5rem; border-radius: .25rem; }
 .save-tabs button[aria-selected="true"] { color: var(--gold); border-color: var(--rose); background: #242033; }
 .save-status { min-height: 1.4rem; margin: .35rem 0 .7rem; color: var(--muted); }
-.save-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; max-height: min(33rem, 65vh); overflow: auto; padding: .1rem .25rem .25rem .1rem; }
+.save-grid { display: grid; flex: 1 1 auto; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); align-content: start; gap: .7rem; min-height: 0; overflow: auto; padding: .1rem .25rem .4rem .1rem; }
 .save-record { position: relative; min-width: 0; }
 .save-slot { width: 100%; min-height: 9.7rem; padding: .6rem; text-align: left; border-radius: .28rem; }
 .save-slot:not(:disabled):hover, .save-slot:not(:disabled):focus-visible { border-color: var(--rose); outline: none; }
@@ -484,9 +528,68 @@ body[data-display-mode="fullscreen"] .control-strip {
 .save-empty { display: grid; place-items: center; color: var(--muted); }
 .save-slot strong { display: block; color: var(--gold); font-size: .9rem; }
 .save-slot small { display: block; margin-top: .18rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.save-slot .save-calendar { color: #d8c69e; }
 .save-delete { position: absolute; right: .42rem; top: .42rem; width: 1.8rem; height: 1.8rem; border-radius: 50%; color: #ffd4d7; background: rgba(20, 12, 20, .9); }
+.save-pages { display: flex; flex: 0 0 auto; align-items: center; gap: .45rem; margin-top: .7rem; padding-top: .65rem; border-top: 1px solid var(--line); }
+.save-page-numbers { display: flex; flex: 1 1 auto; gap: .28rem; overflow-x: auto; padding: .15rem .05rem .3rem; scrollbar-width: thin; }
+.save-pages button { flex: 0 0 2rem; min-width: 2rem; height: 2rem; padding: 0 .3rem; border-radius: 999px; }
+.save-pages button:not(:disabled):hover, .save-pages button:not(:disabled):focus-visible { color: #fff; border-color: var(--rose); outline: none; }
+.save-pages button[aria-current="page"] { color: #17111c; border-color: #f0cfb0; background: var(--gold); box-shadow: 0 0 .75rem rgba(226, 161, 173, .35); }
+.save-pages button:disabled { opacity: .35; cursor: default; }
+.save-pages .save-page-step { flex-basis: 2.45rem; border-radius: .28rem; font-size: 1.35rem; }
 
 body:has(.save-dialog[open]) { overflow: hidden; }
+
+.auto-walkthrough-button {
+  position: absolute;
+  right: 4.2%;
+  bottom: 5.5%;
+  z-index: 18;
+  min-width: 12rem;
+  padding: .65rem 1rem;
+  color: #fff5df;
+  border: 1px solid rgba(104, 67, 54, .82);
+  border-radius: .2rem;
+  background: linear-gradient(180deg, rgba(157, 114, 91, .94), rgba(91, 62, 55, .96));
+  box-shadow: 0 .25rem 1rem rgba(15, 8, 10, .38), inset 0 1px rgba(255, 240, 215, .35);
+  font: 500 max(.76rem, 1.45cqw) Georgia, "Yu Mincho", serif;
+  letter-spacing: .035em;
+}
+.auto-walkthrough-button:hover, .auto-walkthrough-button:focus-visible {
+  color: #fff;
+  border-color: #f0c9a9;
+  outline: none;
+  filter: brightness(1.12);
+}
+.auto-route-picker {
+  position: absolute;
+  inset: 12% 12%;
+  z-index: 30;
+  overflow: auto;
+  padding: max(.9rem, 2.2cqw);
+  color: #f4eee3;
+  border: 1px solid rgba(235, 210, 177, .62);
+  background: linear-gradient(145deg, rgba(24, 19, 25, .96), rgba(65, 46, 46, .94));
+  box-shadow: 0 1.2rem 3rem rgba(0, 0, 0, .62);
+  backdrop-filter: blur(8px);
+}
+.auto-route-picker header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.auto-route-picker h2 { margin: .15rem 0 0; color: var(--gold); font: 500 max(1.2rem, 2.8cqw) Georgia, "Yu Mincho", serif; }
+.auto-route-picker > p { margin: 1rem 0; color: #d8d0c5; line-height: 1.45; }
+.auto-route-picker button { min-height: 2.6rem; color: inherit; border: 1px solid #48465a; background: rgba(9, 10, 19, .72); }
+.auto-route-picker header button { padding: .45rem .8rem; }
+.auto-route-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+.auto-route-grid button { display: flex; flex-direction: column; align-items: flex-start; gap: .18rem; padding: .8rem 1rem; text-align: left; }
+.auto-route-grid button:not(:disabled):hover, .auto-route-grid button:not(:disabled):focus-visible { color: #fff; border-color: var(--rose); outline: none; background: rgba(72, 44, 60, .88); }
+.auto-route-grid button:disabled { opacity: .47; cursor: not-allowed; }
+.auto-route-grid strong { font: 500 max(.92rem, 1.8cqw) "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif; }
+.auto-route-grid small { color: var(--muted); }
+
+@media (max-width: 700px) {
+  .auto-route-picker { inset: 7%; }
+  .auto-route-grid { grid-template-columns: 1fr; }
+  .auto-walkthrough-button { min-width: 9rem; }
+}
 .inspector-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
 .inspector h2 { margin: .2rem 0 0; font: 500 1.3rem Georgia, serif; }
 .archive-stats { display: grid; grid-template-columns: 1fr auto; margin: 1.4rem 0; padding: 1rem; background: var(--panel); border: 1px solid var(--line); }
