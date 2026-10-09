@@ -11,21 +11,22 @@ It reads the original installed archives and raw game CD image without changing 
 - Better shortcuts (original only has left click to advance text).
 - Text speed slider, textbox transparency slider. TODO: color
 - The ghost action icon glows when it is clickable.
+- 1-4x resolution from 640×480 to 2560×1920 with fullscreen option with bilinear upscale. The game text renders at native browser resolution.
 - TODO: Auto Walkthrough route selection is available from the title screen. The
   Minamo good-ending policy automatically resolves dialogue choices, map
   destinations, and timed ghost actions; the other three route slots are
   present for future policies.
 - Added a complete .html walkthrough of the game, originally taken from: https://web.archive.org/web/20021212073805/http://www5.ocn.ne.jp:80/~misaki-b/kouryaku/lien.htm
 
+Savedata is stored in the browser. Can be saved locally from settings menu.
+
 ## Run
 
-Place your game image .img files in the root folder.
+Game data options:
 
+- A completed `assets/` folder extracted with extract_assets.py from the cd files.
+- `lien_inst.img` and `lien_game.img` (or renamed `.img` CD dumps) in the root folder; archives are identified and read directly from the images, with no extraction required.
 - Game archives (`DATA`, `GGD`, `ISF`, `SE`, and `WMSC`) beside the launcher.
-- A completed `assets/` folder beside the launcher (no original game install is needed).
-- `lien_inst.img` and `lien_game.img` (or renamed `.img` CD dumps) beside the
-  launcher; archives are identified and read directly from the images, with no
-  extraction required.
 - A different game directory supplied through the `LIEN_GAME_DIR` environment
   variable.
 
@@ -33,8 +34,6 @@ Place your game image .img files in the root folder.
 
 Run `Launch Lien.bat`.
 Then open <http://127.0.0.1:8787/> if the browser does not open automatically.
-
-The launcher also accepts these layouts:
 
 ### Linux, macOS, and development
 
@@ -52,7 +51,7 @@ The server binds only to the local computer.
 Run the one-time extractor:
 
 ```bash
-python3 extract_assets.py --install-image lien_inst.img --game-image lien_game.img
+python extract_assets.py --install-image lien_inst.img --game-image lien_game.img
 ```
 
 This creates `assets/` containing every individual image, scenario, cursor,
@@ -65,7 +64,7 @@ falls back to the original game data and can be resumed by rerunning the command
 ## Test
 
 ```bash
-python3 -m unittest discover -s tests -v
+python -m unittest discover -s tests -v
 ```
 
 ## Current milestone

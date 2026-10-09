@@ -2540,6 +2540,35 @@ function setInspector(open) {
 
 toggleInspector.addEventListener('click', () => setInspector(inspector.hidden));
 closeInspector.addEventListener('click', () => setInspector(false));
+
+function handleGameShortcut(event) {
+  if (event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return false;
+  if (saveDialog.open) return false;
+  if (event.target instanceof Element && event.target.closest('input, select, textarea, [contenteditable="true"]')) return false;
+  const key = event.key.toLowerCase();
+  if (key === 's' && !saveButton.disabled) {
+    event.preventDefault();
+    openSaveDialog('save').catch(reportRuntimeError);
+  } else if (key === 'l' && !loadButton.disabled) {
+    event.preventDefault();
+    openSaveDialog('load').catch(reportRuntimeError);
+  } else if (key === 'b' && !backlogButton.disabled) {
+    event.preventDefault();
+    if (backlogPopup.hidden) openBacklog();
+    else backlogPopup.hidden = true;
+  } else if (key === 'c' && !settingsButton.disabled) {
+    event.preventDefault();
+    if (settingsPopup.hidden) openSettings();
+    else closeSettings();
+  } else if (key === 'h' && runtime.screen === 'prologue' && runtime.vm?.waiting && !gamePopupOpen()) {
+    event.preventDefault();
+    setMessageInterfaceHidden(!runtime.messageInterfaceHidden);
+  } else {
+    return false;
+  }
+  return true;
+}
+
 window.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !autoRoutePicker.hidden) {
     event.preventDefault();
@@ -2556,6 +2585,8 @@ window.addEventListener('keydown', event => {
   } else if (event.key === 'F12') {
     event.preventDefault();
     setInspector(inspector.hidden);
+  } else if (handleGameShortcut(event)) {
+    // The shortcut handler performs the matching action.
   } else if (!saveDialog.open && settingsPopup.hidden && runtime.screen === 'prologue' && event.key === 'PageUp') {
     event.preventDefault();
     if (backlogPopup.hidden) openBacklog();
