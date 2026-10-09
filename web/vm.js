@@ -412,7 +412,7 @@ export class LienVM {
     this.context.fillStyle = '#000';
     this.context.fillRect(0, 0, this.stage.width, this.stage.height);
     this.context.setTransform(scale, 0, 0, scale, 0, 0);
-    this.context.imageSmoothingEnabled = true;
+    this.context.imageSmoothingEnabled = false;
     this.context.imageSmoothingQuality = 'high';
     this.context.drawImage(display, 0, 0);
   }

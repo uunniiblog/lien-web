@@ -1,7 +1,7 @@
-import { LienVM } from './vm.js?v=1.0.0';
+import { LienVM } from './vm.js?v=1.0.1';
 import {
   AUTO_ROUTES, autoWalkthroughState, createAutoWalkthrough, resolveAutoDecision,
-} from './auto-walkthrough.js?v=1.0.0';
+} from './auto-walkthrough.js?v=1.0.1';
 import {
   deleteSave, getSetting, listReadMessages, listSaves, markMessageRead as persistMessageRead,
   putSave, putSetting, exportStoredData, replaceStoredData,
@@ -9,6 +9,7 @@ import {
 
 const stage = document.querySelector('#stage');
 const stageWrap = document.querySelector('.stage-wrap');
+const runtimeVersion = document.querySelector('#runtime-version');
 const context = stage.getContext('2d', { alpha: false });
 const choiceLayer = document.querySelector('#choice-layer');
 const stateNode = document.querySelector('#runtime-state');
@@ -76,7 +77,8 @@ const SAVE_SLOTS_PER_PAGE = 10;
 const SAVE_PAGES = Math.ceil(SAVE_SLOTS / SAVE_SLOTS_PER_PAGE);
 const LOGICAL_WIDTH = 640;
 const LOGICAL_HEIGHT = 480;
-const RUNTIME_BUILD = '1.0.0';
+const RUNTIME_BUILD = '1.0.1';
+if (runtimeVersion) runtimeVersion.textContent = RUNTIME_BUILD;
 const VOICE_PREAMP = 3;
 const DEFAULT_BACKLOG_POSITION = Object.freeze({ x: 0.5, y: 9 / 38 });
 const DEFAULT_SETTINGS = Object.freeze({
@@ -225,11 +227,11 @@ const runtime = {
 };
 
 function hideAutoRoutePicker() {
-  autoRoutePicker.hidden = true;
+  if (autoRoutePicker) autoRoutePicker.hidden = true;
 }
 
 function setTitleAutoWalkthroughVisible(visible) {
-  autoWalkthroughButton.hidden = !visible;
+  if (autoWalkthroughButton) autoWalkthroughButton.hidden = !visible;
   if (!visible) hideAutoRoutePicker();
 }
 
@@ -710,7 +712,7 @@ function paint(image) {
   context.fillStyle = '#000';
   context.fillRect(0, 0, stage.width, stage.height);
   context.setTransform(runtime.settings.renderScale, 0, 0, runtime.settings.renderScale, 0, 0);
-  context.imageSmoothingEnabled = true;
+  context.imageSmoothingEnabled = false;
   context.imageSmoothingQuality = 'high';
   context.drawImage(image, 0, 0);
 }
@@ -1026,7 +1028,7 @@ function renderBacklog(entries = runtime.vm?.backlog || []) {
     const jump = document.createElement('button');
     jump.type = 'button';
     jump.className = 'backlog-jump';
-    jump.textContent = 'Jump Back';
+    jump.textContent = 'Jump';
     jump.disabled = !entry.checkpoint;
     jump.title = entry.checkpoint
       ? 'Return the game and backlog to this line'
@@ -1208,7 +1210,7 @@ function setRenderScale(value, persist = true, repaint = true) {
   stage.height = height;
   stageWrap.style.width = `${width}px`;
   context.setTransform(amount, 0, 0, amount, 0, 0);
-  context.imageSmoothingEnabled = true;
+  context.imageSmoothingEnabled = false;
   context.imageSmoothingQuality = 'high';
 
   if (repaint) {
@@ -1878,7 +1880,7 @@ async function activateTitleItem(id) {
   if (id === 'extras') {
     return enterOmake();
   }
-  showMessage('Exit', 'Close this browser tab when finished. Stop the local data server with Ctrl+C.');
+  showMessage('Exit', '終わったらブラウザのタブを閉じ、Ctrl+C でサーバーを停止してください。');
 }
 
 async function leaveOmakeScreen() {
@@ -2021,7 +2023,7 @@ async function renderSaveSlots() {
     button.disabled = runtime.saveMode === 'load' && !record;
     button.addEventListener('click', () => {
       if (runtime.saveMode === 'save') {
-        if (record && !window.confirm(`Overwrite save slot ${slot}? The existing save will be replaced.`)) return;
+        if (record && !window.confirm(`スロット${slot}に上書きセーブしますか?この操作でデータは上書きされます。`)) return;
         saveToSlot(slot);
       }
       else if (record) loadFromSlot(record);
@@ -2139,8 +2141,8 @@ async function openSaveDialog(mode) {
   saveTab.setAttribute('aria-selected', String(mode === 'save'));
   loadTab.setAttribute('aria-selected', String(mode === 'load'));
   saveStatus.textContent = mode === 'save'
-    ? 'Choose a slot. Existing data will be replaced.'
-    : 'Choose a saved position to continue.';
+    ? 'セーブする場所を選んでください。既存のデータは上書きされます。'
+    : '続きから始めるデータを選んでください';
   if (!saveDialog.open) saveDialog.showModal();
   requestAnimationFrame(applySaveDialogSize);
   await renderSaveSlots();
@@ -2330,18 +2332,20 @@ stage.addEventListener('wheel', event => {
   }
 }, { passive: false });
 
-autoWalkthroughButton.addEventListener('click', event => {
-  event.stopPropagation();
-  if (runtime.screen === 'title') autoRoutePicker.hidden = false;
-});
-closeAutoRoute.addEventListener('click', hideAutoRoutePicker);
-autoRoutePicker.addEventListener('click', event => {
-  event.stopPropagation();
-  const button = event.target.closest('[data-auto-route]');
-  if (!button || button.disabled) return;
-  hideAutoRoutePicker();
-  beginNewGame(button.dataset.autoRoute).catch(reportRuntimeError);
-});
+if (autoWalkthroughButton && autoRoutePicker && closeAutoRoute) {
+  autoWalkthroughButton.addEventListener('click', event => {
+    event.stopPropagation();
+    if (runtime.screen === 'title') autoRoutePicker.hidden = false;
+  });
+  closeAutoRoute.addEventListener('click', hideAutoRoutePicker);
+  autoRoutePicker.addEventListener('click', event => {
+    event.stopPropagation();
+    const button = event.target.closest('[data-auto-route]');
+    if (!button || button.disabled) return;
+    hideAutoRoutePicker();
+    beginNewGame(button.dataset.autoRoute).catch(reportRuntimeError);
+  });
+}
 
 dialogueBox.addEventListener('click', event => {
   event.stopPropagation();
@@ -2377,7 +2381,7 @@ backlogList.addEventListener('wheel', event => {
   }
 }, { passive: false });
 function handleSecondaryAction() {
-  if (!autoRoutePicker.hidden) {
+  if (autoRoutePicker && !autoRoutePicker.hidden) {
     hideAutoRoutePicker();
   } else if (!backlogPopup.hidden) {
     backlogPopup.hidden = true;
@@ -2570,7 +2574,7 @@ function handleGameShortcut(event) {
 }
 
 window.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !autoRoutePicker.hidden) {
+  if (event.key === 'Escape' && autoRoutePicker && !autoRoutePicker.hidden) {
     event.preventDefault();
     hideAutoRoutePicker();
   } else if (event.key === 'Escape' && !settingsPopup.hidden) {

@@ -7,7 +7,7 @@
     <title>Lien-web</title>
     <meta name="description" content="Lien-web Browser.">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23080a14'/%3E%3Cpath d='M8 8v16h16' fill='none' stroke='%23e2a1ad' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='22' cy='10' r='4' fill='%23e8d9b7'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="/styles.css?v=1.0.0">
+    <link rel="stylesheet" href="/styles.css?v=1.0.1">
   </head>
   <body>
     <main class="shell">
@@ -16,7 +16,7 @@
           <span class="mark" aria-hidden="true">L</span>
           <div>
             <h1>Lien</h1>
-            <p>web runtime</p>
+            <p>web runtime version: <span id="runtime-version"></span></p>
           </div>
         </div>
         <div class="runtime-state" id="runtime-state" role="status">
@@ -38,11 +38,11 @@
           <img class="game-system-bar" id="game-system-bar" src="/api/image/sys_bar.GGD" alt="" hidden>
           <div class="game-system-actions" id="game-system-actions" hidden>
             <img class="ghost-action-status" id="ghost-action-status" src="/api/image/KA.GGD" alt="" hidden>
-            <button type="button" data-system-action="skip" title="Skip messages" aria-label="Skip messages"></button>
+            <button type="button" data-system-action="skip" title="テキストをスキップします" aria-label="Skip messages"></button>
             <button type="button" class="system-ghost-action" data-system-action="ghost" title="Ghost action is not available during this line" aria-label="Perform ghost action" aria-hidden="true" disabled></button>
-            <button type="button" data-system-action="load" title="Load game" aria-label="Load game"></button>
-            <button type="button" data-system-action="title" title="Return to title" aria-label="Return to title"></button>
-            <button type="button" data-system-action="close" title="Hide message window" aria-label="Hide message window"></button>
+            <button type="button" data-system-action="load" title="ロード画面を開く" aria-label="Load game"></button>
+            <button type="button" data-system-action="title" title="タイトルへ戻る" aria-label="Return to title"></button>
+            <button type="button" data-system-action="close" title="テキストウィンドウを隠します" aria-label="Hide message window"></button>
           </div>
           <div class="dialogue-box" id="dialogue-box" hidden>
             <p class="dialogue-name" id="dialogue-name" hidden></p>
@@ -50,6 +50,7 @@
             <span class="dialogue-next" aria-hidden="true"></span>
           </div>
           <div class="transition-cover" id="transition-cover" aria-hidden="true" hidden></div>
+          <!-- Auto Walkthrough UI is intentionally disabled until the remaining routes are implemented.
           <button class="auto-walkthrough-button" id="auto-walkthrough-button" type="button" hidden>Auto Walkthrough</button>
           <section class="auto-route-picker" id="auto-route-picker" role="dialog" aria-modal="true" aria-labelledby="auto-route-title" hidden>
             <header>
@@ -66,7 +67,7 @@
               <button type="button" disabled><strong>近衛 柚</strong><small>Coming later</small></button>
               <button type="button" disabled><strong>楠 若葉＆青葉</strong><small>Coming later</small></button>
             </div>
-          </section>
+          </section> -->
           <section class="game-popup backlog-popup" id="backlog-popup" aria-labelledby="backlog-title" hidden>
             <header>
               <h2 id="backlog-title">Backlog</h2>
@@ -81,103 +82,100 @@
             <header>
               <h2 id="settings-title">Settings</h2>
               <span class="settings-header-actions">
-                <button type="button" id="reset-settings" title="Restore the default runtime settings and window size">Reset defaults</button>
+                <button type="button" id="reset-settings" title="Restore the default runtime settings and window size">初期設定に戻す</button>
                 <button type="button" data-popup-close aria-label="Close settings">Close</button>
               </span>
             </header>
             <div class="settings-content">
               <section class="settings-section" aria-labelledby="graphics-settings-title">
-                <h3 id="graphics-settings-title">Graphics settings</h3>
+                <h3 id="graphics-settings-title">画面設定</h3>
                 <div class="settings-grid graphics-settings-grid">
                   <label class="slider-setting resolution-row" for="render-scale">
-                    <span><strong>Render resolution</strong><output id="render-scale-value" for="render-scale">1× · 640×480</output></span>
+                    <span><strong>描画解像度</strong><output id="render-scale-value" for="render-scale">1× · 640×480</output></span>
                     <input type="range" id="render-scale" min="1" max="4" step="0.25" value="1">
-                    <small>Dialogue text remains independently rendered and sharp.</small>
                   </label>
                   <label class="select-setting display-mode-setting" for="display-mode">
                     <span>
-                      <strong>Display mode</strong>
-                      <small>Fit to page and fullscreen preserve the original 4:3 aspect ratio.</small>
+                      <strong>画面モード</strong>
                     </span>
                     <select id="display-mode">
-                      <option value="windowed">Windowed</option>
-                      <option value="fit">Fit to page</option>
-                      <option value="fullscreen">Fullscreen</option>
+                      <option value="windowed">ウィンドウ表示</option>
+                      <option value="fit">ページに合わせる</option>
+                      <option value="fullscreen">フルスクリーン</option>
                     </select>
                   </label>
                 </div>
               </section>
 
               <section class="settings-section" aria-labelledby="sound-settings-title">
-                <h3 id="sound-settings-title">Sound settings</h3>
+                <h3 id="sound-settings-title">サウンド設定</h3>
                 <div class="settings-grid sound-settings-grid" aria-label="Audio volume">
                   <label class="slider-setting" for="bgm-volume">
                     <span><strong>BGM</strong><output id="bgm-volume-value" for="bgm-volume">65%</output></span>
                     <input type="range" id="bgm-volume" min="0" max="100" step="1" value="65">
                   </label>
                   <label class="slider-setting" for="voice-volume">
-                    <span><strong>Voice</strong><output id="voice-volume-value" for="voice-volume">100%</output></span>
+                    <span><strong>音声</strong><output id="voice-volume-value" for="voice-volume">100%</output></span>
                     <input type="range" id="voice-volume" min="0" max="100" step="1" value="100">
                   </label>
                   <label class="slider-setting" for="effect-volume">
-                    <span><strong>Sound effects</strong><output id="effect-volume-value" for="effect-volume">100%</output></span>
+                    <span><strong>効果音</strong><output id="effect-volume-value" for="effect-volume">100%</output></span>
                     <input type="range" id="effect-volume" min="0" max="100" step="1" value="100">
                   </label>
                   <label class="setting-row setting-row-wide">
                     <input type="checkbox" id="continue-voice" checked>
                     <span>
-                      <strong>Keep voice playing after advancing</strong>
-                      <small>When disabled, advancing to the next line stops the current voice.</small>
+                      <strong>メッセージ送り時の送り引き継ぎ</strong>
+                      <small>オフにすると、次のメッセージへ進んだときに再生中のボイスが停止します。</small>
                     </span>
                   </label>
                 </div>
               </section>
 
               <section class="settings-section" aria-labelledby="text-settings-title">
-                <h3 id="text-settings-title">Text settings</h3>
+                <h3 id="text-settings-title">テキスト設定</h3>
                 <div class="settings-grid text-settings-grid">
                   <label class="setting-row">
                     <input type="checkbox" id="skip-read-only" checked>
                     <span>
-                      <strong>Skip only previously read text</strong>
-                      <small>Skip stops when it reaches dialogue you have not seen before.</small>
+                      <strong>既読文章のみスキップ</strong>
+                      <small>未読のメッセージに到達すると、スキップを停止します。</small>
                     </span>
                   </label>
                   <label class="slider-setting" for="text-speed">
-                    <span><strong>Text speed</strong><output id="text-speed-value" for="text-speed">Instant</output></span>
+                    <span><strong>テキスト表示速度</strong><output id="text-speed-value" for="text-speed">Instant</output></span>
                     <input type="range" id="text-speed" min="0" max="100" step="5" value="100">
-                    <small>Lower values reveal dialogue more gradually.</small>
+                    <small>値を小さくすると、テキストがゆっくり表示されます。</small>
                   </label>
                   <label class="slider-setting" for="textbox-transparency">
-                    <span><strong>Textbox transparency</strong><output id="textbox-transparency-value" for="textbox-transparency">0%</output></span>
+                    <span><strong>ウィンドウ透明度</strong><output id="textbox-transparency-value" for="textbox-transparency">0%</output></span>
                     <input type="range" id="textbox-transparency" min="0" max="100" step="1" value="0">
-                    <small>This changes the box only; dialogue text remains fully opaque.</small>
+                    <small>メッセージウィンドウのみ透明になります。テキストの不透明度は変わりません。</small>
                   </label>
                 </div>
                 <div class="settings-grid settings-grid-single">
                   <label class="setting-row">
                     <input type="checkbox" id="stop-skip-at-ghost-action" checked>
                     <span>
-                      <strong>Stop skipping at ghost actions</strong>
-                      <small>Skip stops when とりつく becomes available, so the action cannot be missed.</small>
+                      <strong>「とりつく」が可能になったらスキップを停止</strong>
+                      <small>「とりつく」が可能になるとスキップを停止し、実行のタイミングを逃さないようにします。</small>
                     </span>
                   </label>
                 </div>
                 <div class="settings-grid settings-grid-single font-settings-row">
                   <label class="select-setting" for="game-font">
                     <span>
-                      <strong>In-game font</strong>
-                      <small>Japanese-aware font stacks use an available local fallback when the preferred font is not installed.</small>
+                      <strong>フォント設定</strong>
                     </span>
                     <select id="game-font">
-                      <option value="current">Current Mincho (default)</option>
-                      <option value="bundled-mincho">Mincho (bundled fallback)</option>
-                      <option value="ms-gothic">MS Gothic (bundled fallback)</option>
-                      <option value="gothic">Japanese Gothic</option>
-                      <option value="rounded">Rounded Gothic</option>
-                      <option value="system-serif">System Serif</option>
-                      <option value="system-sans">System Sans</option>
-                      <option value="monospace">Japanese Monospace</option>
+                      <option value="current">現在の明朝体（初期設定）</option>
+                      <option value="gothic">日本語ゴシック体</option>
+                      <option value="rounded">丸ゴシック体</option>
+                      <option value="system-serif">システムのセリフ体</option>
+                      <option value="system-sans">システムのサンセリフ体</option>
+                      <option value="monospace">日本語等幅フォント</option>
+                      <option value="bundled-mincho">明朝体（内蔵フォント）</option>
+                      <option value="ms-gothic">MS ゴシック風（内蔵フォント）</option>
                     </select>
                   </label>
                 </div>
@@ -186,25 +184,25 @@
               <section class="settings-section shortcuts-section" aria-labelledby="shortcuts-settings-title">
                 <h3 id="shortcuts-settings-title">Shortcuts</h3>
                 <dl class="shortcuts-grid">
-                  <div><dt><kbd>Left click</kbd><kbd>Enter</kbd><kbd>Space</kbd></dt><dd>Advance dialogue</dd></div>
-                  <div><dt><kbd>B</kbd></dt><dd>Open or close the backlog</dd></div>
-                  <div><dt><kbd>C</kbd></dt><dd>Open or close Settings</dd></div>
-                  <div><dt><kbd>H</kbd><kbd>Right click</kbd></dt><dd>Hide or restore the textbox</dd></div>
-                  <div><dt><kbd>S</kbd></dt><dd>Open the Save menu</dd></div>
-                  <div><dt><kbd>L</kbd></dt><dd>Open the Load menu</dd></div>
-                  <div><dt><kbd>Wheel up</kbd><kbd>Page Up</kbd></dt><dd>Open the backlog or move toward older lines</dd></div>
-                  <div><dt><kbd>Wheel down</kbd><kbd>Page Down</kbd></dt><dd>Move toward newer lines and return to the textbox</dd></div>
-                  <div><dt><kbd>Esc</kbd></dt><dd>Close the current popup or menu</dd></div>
+                  <div><dt><kbd>左クリック</kbd><kbd>Enter</kbd><kbd>スペース</kbd></dt><dd>次のメッセージへ進む</dd></div>
+                  <div><dt><kbd>B</kbd></dt><dd>バックログを開く／閉じる</dd></div>
+                  <div><dt><kbd>C</kbd></dt><dd>設定を開く／閉じる</dd></div>
+                  <div><dt><kbd>H</kbd><kbd>右クリック</kbd></dt><dd>メッセージウィンドウを隠す／表示する</dd></div>
+                  <div><dt><kbd>S</kbd></dt><dd>セーブ画面を開く</dd></div>
+                  <div><dt><kbd>L</kbd></dt><dd>ロード画面を開く</dd></div>
+                  <div><dt><kbd>マウスホイール上</kbd><kbd>Page Up</kbd></dt><dd>バックログを開く／古いメッセージへ移動</dd></div>
+                  <div><dt><kbd>マウスホイール下</kbd><kbd>Page Down</kbd></dt><dd>新しいメッセージへ移動／最新位置で閉じる</dd></div>
+                  <div><dt><kbd>Esc</kbd></dt><dd>現在のメニューを閉じる</dd></div>
                 </dl>
               </section>
 
               <section class="save-transfer" aria-labelledby="save-transfer-title">
-                <strong id="save-transfer-title">Save-data transfer</strong>
+                <strong id="save-transfer-title">セーブデータ</strong>
                 <div class="save-transfer-actions">
-                  <button type="button" id="export-saves">Export saves</button>
-                  <button type="button" id="import-saves">Import saves</button>
+                  <button type="button" id="export-saves">セーブデータをエクスポート</button>
+                  <button type="button" id="import-saves">セーブデータを読み込む</button>
                 </div>
-                <small id="save-transfer-status" role="status" aria-live="polite">Transfers save slots, read history, and runtime settings.</small>
+                <small id="save-transfer-status" role="status" aria-live="polite">セーブデータ、既読履歴、各種設定をまとめて移行します。</small>
                 <input type="file" id="import-saves-file" accept="application/json,.json" hidden>
               </section>
             </div>
@@ -214,7 +212,7 @@
 
         <nav class="control-strip" aria-label="Game controls">
           <button type="button" data-action="backlog" disabled>Backlog</button>
-          <button type="button" data-action="auto" disabled>Auto</button>
+          <!-- <button type="button" data-action="auto" disabled>Auto</button> -->
           <button type="button" data-action="skip" disabled>Skip</button>
           <div class="control-spacer"></div>
           <button type="button" data-action="save" disabled>Save</button>
@@ -254,6 +252,6 @@
         </form>
       </dialog>
     </main>
-    <script type="module" src="/runtime.js?v=1.0.0"></script>
+    <script type="module" src="/runtime.js?v=1.0.1"></script>
   </body>
 </html>
