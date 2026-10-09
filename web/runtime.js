@@ -1,7 +1,7 @@
-import { LienVM } from './vm.js?v=20261009-55';
+import { LienVM } from './vm.js?v=1.0.0';
 import {
   AUTO_ROUTES, autoWalkthroughState, createAutoWalkthrough, resolveAutoDecision,
-} from './auto-walkthrough.js?v=20261009-55';
+} from './auto-walkthrough.js?v=1.0.0';
 import {
   deleteSave, getSetting, listReadMessages, listSaves, markMessageRead as persistMessageRead,
   putSave, putSetting, exportStoredData, replaceStoredData,
@@ -76,7 +76,7 @@ const SAVE_SLOTS_PER_PAGE = 10;
 const SAVE_PAGES = Math.ceil(SAVE_SLOTS / SAVE_SLOTS_PER_PAGE);
 const LOGICAL_WIDTH = 640;
 const LOGICAL_HEIGHT = 480;
-const RUNTIME_BUILD = '20261009-55';
+const RUNTIME_BUILD = '1.0.0';
 const VOICE_PREAMP = 3;
 const DEFAULT_BACKLOG_POSITION = Object.freeze({ x: 0.5, y: 9 / 38 });
 const DEFAULT_SETTINGS = Object.freeze({
