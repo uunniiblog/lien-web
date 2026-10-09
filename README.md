@@ -1,23 +1,7 @@
-# Lien browser preservation runtime
+# Lien Web Browser Port.
 
-This is a private, clean browser runtime for **Lien ～終わらない君の唄～**.
-It reads the original installed archives and raw game CD image without changing
-or copying them.
-
-## Make it portable
-
-Run the one-time extractor before moving or archiving this folder:
-
-```bash
-python3 extract_assets.py
-```
-
-This creates `assets/` containing every individual image, scenario, cursor,
-effect, music track, and voice file (about 0.8–0.9 GB). Once the command reports
-completion, the entire `lien-web` folder can be moved by itself; `server.py`
-automatically prefers the portable assets. The `.complete.json` marker is only
-written after every file has been exported, so an interrupted extraction safely
-falls back to the original game data and can be resumed by rerunning the command.
+Reimplementation of the game **Lien ～終わらない君の唄～** engine as a web port.
+It reads the original installed archives and raw game CD image without changing or copying them.
 
 ## Improvements
 - Implemented backlog with portrait icon, voice repeat and jump back mechanic.
@@ -26,20 +10,35 @@ falls back to the original game data and can be resumed by rerunning the command
 - Skip button with option to only skip already read text.
 - Better shortcuts (original only has left click to advance text).
 - Text speed slider, textbox transparency slider. TODO: color
-- The ghost-action icon glows during the original scripted `TUKI_ON` windows.
-- Auto Walkthrough route selection is available from the title screen. The
+- The ghost action icon glows when it is clickable.
+- TODO: Auto Walkthrough route selection is available from the title screen. The
   Minamo good-ending policy automatically resolves dialogue choices, map
   destinations, and timed ghost actions; the other three route slots are
   present for future policies.
-- Added a complete walkthrough of the game, original base taken from: https://web.archive.org/web/20021212073805/http://www5.ocn.ne.jp:80/~misaki-b/kouryaku/lien.htm
-
-## TODO:
-Launch without python (For Windows)
-
+- Added a complete .html walkthrough of the game, originally taken from: https://web.archive.org/web/20021212073805/http://www5.ocn.ne.jp:80/~misaki-b/kouryaku/lien.htm
 
 ## Run
 
-From this directory:
+Place your game image .img files in the root folder.
+
+- Game archives (`DATA`, `GGD`, `ISF`, `SE`, and `WMSC`) beside the launcher.
+- A completed `assets/` folder beside the launcher (no original game install is needed).
+- `lien_inst.img` and `lien_game.img` (or renamed `.img` CD dumps) beside the
+  launcher; archives are identified and read directly from the images, with no
+  extraction required.
+- A different game directory supplied through the `LIEN_GAME_DIR` environment
+  variable.
+
+### Windows
+
+Run `Launch Lien.bat`.
+Then open <http://127.0.0.1:8787/> if the browser does not open automatically.
+
+The launcher also accepts these layouts:
+
+### Linux, macOS, and development
+
+From this directory, with Python 3.10 or newer:
 
 ```bash
 python3 server.py --open
@@ -47,6 +46,21 @@ python3 server.py --open
 
 Then open <http://127.0.0.1:8787/> if the browser does not open automatically.
 The server binds only to the local computer.
+
+## Extract Assets, run without CD images
+
+Run the one-time extractor:
+
+```bash
+python3 extract_assets.py --install-image lien_inst.img --game-image lien_game.img
+```
+
+This creates `assets/` containing every individual image, scenario, cursor,
+effect, music track, and voice file (about 0.8–0.9 GB). Once the command reports
+completion, the entire `lien-web` folder can be moved by itself; `server.py`
+automatically prefers the portable assets. The `.complete.json` marker is only
+written after every file has been exported, so an interrupted extraction safely
+falls back to the original game data and can be resumed by rerunning the command.
 
 ## Test
 
@@ -57,7 +71,7 @@ python3 -m unittest discover -s tests -v
 ## Current milestone
 
 - Parses Ikura GDL format-1 archives.
-- Reads the `VOICE` archive directly from the MODE1/2352 game CD image.
+- Reads the installed archives or the original MODE1/2352 CD images directly.
 - Decodes every Lien GGD image into browser-native PNG on demand.
 - Decrypts all 321 ISF scenarios into their real jump tables and opcodes.
 - Serves original PCM music, effects, and voice without conversion.
@@ -70,7 +84,7 @@ python3 -m unittest discover -s tests -v
   opening dialogue with speaker names and keyboard/pointer advancement.
 - Uses the original 483×111 message frame and 483×29 system bar at their
   original 640×480 coordinates, with fixed-size automatic text pagination.
-- Provides 20 browser-native save slots with screenshots and complete VM,
+- Provides 200 paged browser-native save slots with screenshots and complete VM,
   graphics, flag, variable, call-stack, dialogue, and music-position state.
 - Provides a translucent dialogue backlog retaining the latest 100 entries and
   preservation-runtime settings independent of the original executable. The

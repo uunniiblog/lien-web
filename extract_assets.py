@@ -26,11 +26,33 @@ def write_atomic(target: Path, data: bytes) -> None:
     os.replace(temporary, target)
 
 
-def extract(game_dir: Path, output: Path, force: bool = False) -> dict[str, object]:
-    source = GameData(game_dir, portable_dir=output, prefer_portable=False)
+def extract(
+    game_dir: Path,
+    output: Path,
+    force: bool = False,
+    install_image: Path | None = None,
+    game_image: Path | None = None,
+) -> dict[str, object]:
+    source = GameData(
+        game_dir,
+        portable_dir=output,
+        prefer_portable=False,
+        install_image=install_image,
+        game_image=game_image,
+    )
+    missing = [name for name in ARCHIVE_NAMES if name not in source.archives]
+    if missing:
+        raise FileNotFoundError(
+            "Required archive(s) not found: " + ", ".join(missing)
+            + ". Use --install-image/--install-disc for the installation CD"
+            + " (the disc containing DATA/GGD/ISF/SE/WMSC)."
+        )
     groups = {name: source.archives[name] for name in ARCHIVE_NAMES}
     if source.voice is None:
-        raise FileNotFoundError("VOICE archive was not found in lien_game.img")
+        raise FileNotFoundError(
+            "VOICE archive was not found. Use --game-image/--game-disc for the"
+            " game CD (the disc containing VOICE)."
+        )
     groups["VOICE"] = source.voice
 
     inventory: dict[str, dict[str, int]] = {}
@@ -55,7 +77,7 @@ def extract(game_dir: Path, output: Path, force: bool = False) -> dict[str, obje
     manifest: dict[str, object] = {
         "format": "lien-portable-assets",
         "version": FORMAT_VERSION,
-        "source": str(game_dir.resolve()),
+        "source": str((game_image or game_dir).resolve()),
         "groups": inventory,
         "files": total_files,
         "bytes": sum(item["bytes"] for item in inventory.values()),
@@ -70,10 +92,22 @@ def extract(game_dir: Path, output: Path, force: bool = False) -> dict[str, obje
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
+    parser.add_argument(
+        "--install-image", "--install-disc", dest="install_image", type=Path,
+        help="installation CD image containing DATA/GGD/ISF/SE/WMSC",
+    )
+    parser.add_argument(
+        "--game-image", "--game-disc", dest="game_image", type=Path,
+        help="game CD image containing VOICE",
+    )
     parser.add_argument("--output", type=Path, default=PROJECT_DIR / "assets")
     parser.add_argument("--force", action="store_true", help="rewrite files even when their sizes match")
     args = parser.parse_args()
-    manifest = extract(args.game_dir.resolve(), args.output.resolve(), args.force)
+    manifest = extract(
+        args.game_dir.resolve(), args.output.resolve(), args.force,
+        args.install_image.resolve() if args.install_image else None,
+        args.game_image.resolve() if args.game_image else None,
+    )
     size_mib = int(manifest["bytes"]) / (1024 * 1024)
     print(f"Portable asset export complete: {manifest['files']} files, {size_mib:.1f} MiB")
 

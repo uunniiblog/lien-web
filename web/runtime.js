@@ -756,7 +756,7 @@ async function fetchScenario(name) {
 }
 
 function showMessage(title, body) {
-  stageMessage.querySelector('.eyebrow').textContent = 'Preservation runtime';
+  stageMessage.querySelector('.eyebrow').textContent = 'Web runtime';
   stageMessage.querySelector('h2').textContent = title;
   stageMessage.querySelector('p:last-child').textContent = body;
   stageMessage.hidden = false;

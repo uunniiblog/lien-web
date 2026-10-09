@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local data server for the Lien browser preservation port.
+"""Local data server for the Lien browser port.
 
 The server never modifies the original game files.  It exposes decoded assets
 from the installed Ikura GDL archives and the VOICE archive inside the raw game
@@ -13,6 +13,7 @@ import contextlib
 import io
 import json
 import mimetypes
+import os
 import struct
 import threading
 import webbrowser
@@ -26,7 +27,7 @@ from urllib.parse import unquote, urlparse
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
-DEFAULT_GAME_DIR = PROJECT_DIR.parent
+DEFAULT_GAME_DIR = Path(os.environ.get("LIEN_GAME_DIR", PROJECT_DIR.parent))
 WEB_DIR = PROJECT_DIR / "web"
 ARCHIVE_NAMES = ("DATA", "GGD", "ISF", "SE", "WMSC")
 
@@ -549,7 +550,14 @@ def extract_isf_strings(data: bytes) -> list[dict[str, object]]:
 
 
 class GameData:
-    def __init__(self, game_dir: Path, portable_dir: Path | None = None, prefer_portable: bool = True):
+    def __init__(
+        self,
+        game_dir: Path,
+        portable_dir: Path | None = None,
+        prefer_portable: bool = True,
+        install_image: Path | None = None,
+        game_image: Path | None = None,
+    ):
         self.game_dir = game_dir
         self.portable_dir = portable_dir or PROJECT_DIR / "assets"
         self.archives: dict[str, IkuraArchive | DirectoryArchive] = {}
@@ -563,14 +571,61 @@ class GameData:
             )
             return
 
+        # A moved viewer may sit beside the original CD images rather than the
+        # installed archive files.  Search the explicit paths first, then the
+        # supplied game directory, the viewer directory, and its parent.
+        candidates = []
+        for directory in (game_dir, PROJECT_DIR, PROJECT_DIR.parent):
+            if directory not in candidates:
+                candidates.append(directory)
+
+        def first_file(explicit: Path | None, names: tuple[str, ...]) -> Path | None:
+            if explicit is not None:
+                return explicit if explicit.is_file() else None
+            for directory in candidates:
+                for name in names:
+                    path = directory / name
+                    if path.is_file():
+                        return path
+            return None
+
+        install_path = first_file(install_image, ("lien_inst.img", "LIEN_INST.IMG"))
+        game_path = first_file(game_image, ("lien_game.img", "LIEN_GAME.IMG"))
+        # Disc dumps are often renamed by imaging tools.  Identify those by
+        # their ISO root contents when the conventional names are absent.
+        inspected_images: dict[Path, dict[str, tuple[int, int]]] = {}
+        for directory in candidates:
+            for path in sorted(directory.glob("*.img")) if directory.is_dir() else ():
+                if path in inspected_images or path in {install_path, game_path}:
+                    continue
+                try:
+                    inspected_images[path] = RawMode1Image(path).root_files()
+                except (OSError, FormatError):
+                    continue
+                root = inspected_images[path]
+                if install_path is None and any(name.casefold() in root for name in ARCHIVE_NAMES):
+                    install_path = path
+                if game_path is None and "voice" in root:
+                    game_path = path
+        install_root: dict[str, tuple[int, int]] = {}
+        install_disc: RawMode1Image | None = None
+        if install_path is not None:
+            install_disc = RawMode1Image(install_path)
+            install_root = install_disc.root_files()
+
         for name in ARCHIVE_NAMES:
-            path = game_dir / name
-            if path.is_file():
+            path = first_file(None, (name, name.lower()))
+            if path is not None:
                 self.archives[name] = IkuraArchive(SliceReader(path), name)
-        game_image = game_dir / "lien_game.img"
+            elif install_disc is not None and name.casefold() in install_root:
+                sector, size = install_root[name.casefold()]
+                self.archives[name] = IkuraArchive(
+                    IsoExtentReader(install_disc, sector, size), name
+                )
+
         self.voice: IkuraArchive | None = None
-        if game_image.is_file():
-            image = RawMode1Image(game_image)
+        if game_path is not None:
+            image = RawMode1Image(game_path)
             root = image.root_files()
             if "voice" in root:
                 sector, size = root["voice"]
@@ -595,13 +650,20 @@ class GameData:
             "title": "Lien ～終わらない君の唄～",
             "startScenario": "START.isf",
             "logicalSize": {"width": 640, "height": 480},
-            "dataSource": "portable-assets" if self.using_portable_assets else "original-archives",
+            "dataSource": (
+                "portable-assets" if self.using_portable_assets
+                else "disc-images" if any(
+                    isinstance(archive.source, IsoExtentReader)
+                    for archive in self.archives.values()
+                ) or (self.voice and isinstance(self.voice.source, IsoExtentReader))
+                else "original-archives"
+            ),
             "archives": archives,
         }
 
 
 class LienRequestHandler(SimpleHTTPRequestHandler):
-    server_version = "LienPreservation/0.1"
+    server_version = "LienWeb/0.1"
 
     def __init__(self, *args, game_data: GameData, **kwargs):
         self.game_data = game_data
@@ -611,7 +673,7 @@ class LienRequestHandler(SimpleHTTPRequestHandler):
         print(f"[{self.log_date_time_string()}] {format % args}")
 
     def end_headers(self) -> None:
-        # Runtime HTML/CSS/JS changes frequently during preservation work.
+        # Runtime HTML/CSS/JS changes frequently during work.
         # Do not let a browser profile retain an older interpreter build.
         # API-served game assets keep their separate cache policy below.
         if not urlparse(self.path).path.startswith("/api/"):
@@ -710,8 +772,14 @@ class LienRequestHandler(SimpleHTTPRequestHandler):
             self.send_api_error(HTTPStatus.BAD_REQUEST, str(error))
 
 
-def make_server(game_dir: Path, host: str, port: int) -> ThreadingHTTPServer:
-    game_data = GameData(game_dir)
+def make_server(
+    game_dir: Path,
+    host: str,
+    port: int,
+    install_image: Path | None = None,
+    game_image: Path | None = None,
+) -> ThreadingHTTPServer:
+    game_data = GameData(game_dir, install_image=install_image, game_image=game_image)
 
     def handler(*args, **kwargs):
         return LienRequestHandler(*args, game_data=game_data, **kwargs)
@@ -722,13 +790,19 @@ def make_server(game_dir: Path, host: str, port: int) -> ThreadingHTTPServer:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
+    parser.add_argument("--install-image", "--install-disc", dest="install_image", type=Path, help="installation CD image containing DATA/GGD/ISF/SE/WMSC")
+    parser.add_argument("--game-image", "--game-disc", dest="game_image", type=Path, help="game CD image containing VOICE")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--open", action="store_true", help="open the browser after startup")
     args = parser.parse_args()
-    server = make_server(args.game_dir.resolve(), args.host, args.port)
+    server = make_server(
+        args.game_dir.resolve(), args.host, args.port,
+        args.install_image.resolve() if args.install_image else None,
+        args.game_image.resolve() if args.game_image else None,
+    )
     url = f"http://{args.host}:{server.server_port}/"
-    print(f"Lien preservation runtime: {url}")
+    print(f"Lien-web runtime: {url}")
     print("Press Ctrl+C to stop.")
     if args.open:
         threading.Timer(0.3, lambda: webbrowser.open(url)).start()

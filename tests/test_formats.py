@@ -73,6 +73,26 @@ class FormatTests(unittest.TestCase):
         self.assertIsNotNone(portable.voice)
         self.assertEqual(3457, len(portable.voice.entries))
 
+    def test_cd_images_are_independent_of_install_directory(self):
+        install_image = GAME_DIR / "lien_inst.img"
+        game_image = GAME_DIR / "lien_game.img"
+        if not (install_image.is_file() and game_image.is_file()):
+            self.skipTest("original CD images are not present")
+        disc_data = GameData(
+            Path("/missing-lien-install"),
+            portable_dir=Path("/missing-lien-assets"),
+            prefer_portable=False,
+            install_image=install_image,
+            game_image=game_image,
+        )
+        self.assertEqual(
+            {name: len(archive.entries) for name, archive in self.data.archives.items()},
+            {name: len(archive.entries) for name, archive in disc_data.archives.items()},
+        )
+        self.assertIsNotNone(disc_data.voice)
+        self.assertEqual(3457, len(disc_data.voice.entries))
+        self.assertEqual("disc-images", disc_data.manifest()["dataSource"])
+
 
 if __name__ == "__main__":
     unittest.main()
