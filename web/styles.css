@@ -369,18 +369,18 @@ button { font: inherit; }
   container-type: inline-size;
   position: fixed;
   z-index: 1000;
-  left: 50%;
-  top: 50%;
-  width: min(90vw, 1100px);
-  height: min(86vh, 760px);
+  left: 0;
+  top: 0;
+  width: min(960px, 96vw);
+  height: min(720px, 96vh);
   min-width: min(24rem, 90vw);
   min-height: min(22rem, 80vh);
   max-width: 96vw;
   max-height: 96vh;
-  transform: translate(-50%, -50%);
   padding: clamp(1rem, 2cqw, 2rem);
 }
-.settings-popup header { flex: 0 0 auto; padding-bottom: 1cqw; }
+.settings-popup header { flex: 0 0 auto; padding-bottom: 1cqw; cursor: grab; touch-action: none; user-select: none; }
+.settings-popup header:active { cursor: grabbing; }
 .settings-popup header button { cursor: pointer; }
 .settings-header-actions { display: flex; align-items: center; gap: .5cqw; }
 .settings-content { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 .5cqw .3cqw 0; }

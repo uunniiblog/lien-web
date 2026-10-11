@@ -3,9 +3,19 @@
 Reimplementation of the game **Lien ～終わらない君の唄～** engine as a web port.
 It reads the original installed archives and raw game CD image without changing or copying them.
 
+## Screenshots
+
+| Title screen | Dialogue |
+| --- | --- |
+| <a href="docs/screenshots/1.png"><img src="docs/screenshots/1.png" alt="Lien title screen in the web port" width="360"></a> | <a href="docs/screenshots/2.png"><img src="docs/screenshots/2.png" alt="Dialogue scene with browser controls" width="360"></a> |
+| **Backlog** | **Map** |
+| <a href="docs/screenshots/3.png"><img src="docs/screenshots/3.png" alt="Backlog window over a dialogue scene" width="360"></a> | <a href="docs/screenshots/4.png"><img src="docs/screenshots/4.png" alt="Map scene in the web port" width="360"></a> |
+| **Settings** | **Save and load** |
+| <a href="docs/screenshots/settings.png"><img src="docs/screenshots/settings.png" alt="Settings window with graphics, sound, text, and shortcut options" width="360"></a> | <a href="docs/screenshots/save.png"><img src="docs/screenshots/save.png" alt="Save and load window showing save slots" width="360"></a> |
+
 ## Improvements
 - Implemented backlog with portrait icon, voice repeat and jump back mechanic.
-- Sound configuration, included cut voice on line advancing.
+- Sound configuration, including carry over voice on line advancing.
 - Save anywhere. (In the original its only possible to save in map choices). Added more save slots
 - Skip button with option to only skip already read text.
 - Better shortcuts (original only has left click to advance text).

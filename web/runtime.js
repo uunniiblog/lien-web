@@ -1,7 +1,7 @@
-import { LienVM } from './vm.js?v=1.0.1';
+import { LienVM } from './vm.js?v=1.0.2';
 import {
   AUTO_ROUTES, autoWalkthroughState, createAutoWalkthrough, resolveAutoDecision,
-} from './auto-walkthrough.js?v=1.0.1';
+} from './auto-walkthrough.js?v=1.0.2';
 import {
   deleteSave, getSetting, listReadMessages, listSaves, markMessageRead as persistMessageRead,
   putSave, putSetting, exportStoredData, replaceStoredData,
@@ -77,7 +77,7 @@ const SAVE_SLOTS_PER_PAGE = 10;
 const SAVE_PAGES = Math.ceil(SAVE_SLOTS / SAVE_SLOTS_PER_PAGE);
 const LOGICAL_WIDTH = 640;
 const LOGICAL_HEIGHT = 480;
-const RUNTIME_BUILD = '1.0.1';
+const RUNTIME_BUILD = '1.0.2';
 if (runtimeVersion) runtimeVersion.textContent = RUNTIME_BUILD;
 const VOICE_PREAMP = 3;
 const DEFAULT_BACKLOG_POSITION = Object.freeze({ x: 0.5, y: 9 / 38 });
@@ -85,9 +85,9 @@ const DEFAULT_SETTINGS = Object.freeze({
   skipReadOnly: true,
   stopSkipAtGhostAction: true,
   continueVoice: true,
-  bgmVolume: 65,
+  bgmVolume: 20,
   voiceVolume: 100,
-  effectVolume: 100,
+  effectVolume: 20,
   renderScale: 1,
   displayMode: 'windowed',
   textSpeed: 100,
@@ -206,6 +206,7 @@ const runtime = {
   backlogPosition: { ...DEFAULT_BACKLOG_POSITION },
   backlogSize: null,
   settingsSize: null,
+  settingsPosition: { x: 0.5, y: 0.5 },
   fullscreenReturnMode: 'windowed',
   omake: { hover: null, category: null, viewer: null, miniIndex: 0 },
   textRevealTimer: null,
@@ -1291,18 +1292,37 @@ function setGameFont(value, persist = true) {
 function applySettingsSize() {
   if (settingsPopup.hidden) return;
   if (!runtime.settingsSize) {
-    // Preserve the original in-game popup dimensions on first use even
-    // though the window now lives at viewport level and may grow beyond it.
-    settingsPopup.style.width = `${stageWrap.clientWidth * 0.8}px`;
-    settingsPopup.style.height = `${stageWrap.clientHeight * 0.88}px`;
+    settingsPopup.style.width = `${Math.min(960, window.innerWidth * .96)}px`;
+    settingsPopup.style.height = `${Math.min(720, window.innerHeight * .96)}px`;
     return;
   }
   settingsPopup.style.width = `${window.innerWidth * runtime.settingsSize.width}px`;
   settingsPopup.style.height = `${window.innerHeight * runtime.settingsSize.height}px`;
 }
 
+function applySettingsPosition() {
+  if (settingsPopup.hidden) return;
+  const availableX = Math.max(0, window.innerWidth - settingsPopup.offsetWidth);
+  const availableY = Math.max(0, window.innerHeight - settingsPopup.offsetHeight);
+  settingsPopup.style.left = `${availableX * runtime.settingsPosition.x}px`;
+  settingsPopup.style.top = `${availableY * runtime.settingsPosition.y}px`;
+}
+
+function saveSettingsPosition() {
+  const availableX = Math.max(1, window.innerWidth - settingsPopup.offsetWidth);
+  const availableY = Math.max(1, window.innerHeight - settingsPopup.offsetHeight);
+  runtime.settingsPosition = {
+    x: Math.min(1, Math.max(0, settingsPopup.offsetLeft / availableX)),
+    y: Math.min(1, Math.max(0, settingsPopup.offsetTop / availableY)),
+  };
+  putSetting('settingsPosition', runtime.settingsPosition).catch(() => {});
+}
+
 function saveSettingsSize() {
   if (settingsPopup.hidden) return;
+  if (!runtime.settingsSize &&
+      Math.abs(settingsPopup.offsetWidth - Math.min(960, window.innerWidth * .96)) < 1 &&
+      Math.abs(settingsPopup.offsetHeight - Math.min(720, window.innerHeight * .96)) < 1) return;
   runtime.settingsSize = {
     width: Math.min(.96, Math.max(.3, settingsPopup.offsetWidth / window.innerWidth)),
     height: Math.min(.96, Math.max(.3, settingsPopup.offsetHeight / window.innerHeight)),
@@ -1319,7 +1339,8 @@ function openSettings() {
   if (settingsPopup.parentNode !== document.body) document.body.append(settingsPopup);
   settingsPopup.classList.add('settings-detached');
   settingsPopup.hidden = false;
-  requestAnimationFrame(applySettingsSize);
+  applySettingsSize();
+  applySettingsPosition();
 }
 
 function closeSettings() {
@@ -1350,10 +1371,15 @@ function resetRuntimeSettings() {
   putSetting('stopSkipAtGhostAction', DEFAULT_SETTINGS.stopSkipAtGhostAction).catch(() => {});
   putSetting('continueVoice', DEFAULT_SETTINGS.continueVoice).catch(() => {});
   runtime.settingsSize = null;
+  runtime.settingsPosition = { x: 0.5, y: 0.5 };
   settingsPopup.style.removeProperty('width');
   settingsPopup.style.removeProperty('height');
   putSetting('settingsSize', null).catch(() => {});
-  if (!settingsPopup.hidden) applySettingsSize();
+  putSetting('settingsPosition', runtime.settingsPosition).catch(() => {});
+  if (!settingsPopup.hidden) {
+    applySettingsSize();
+    applySettingsPosition();
+  }
 }
 
 function setSkipMode(enabled) {
@@ -2151,15 +2177,15 @@ async function openSaveDialog(mode) {
 async function bootstrap() {
   try {
     runtimeLog('bootstrap', { userAgent: navigator.userAgent });
-    const [manifestResponse, readMessages, readOnly, savedStopSkipAtGhostAction, savedContinueVoice, savedBgm, savedVoice, savedEffect, savedBacklogPosition, savedBacklogSize, savedRenderScale, savedDisplayMode, savedTextSpeed, savedTextboxTransparency, savedGameFont, savedSettingsSize, savedSaveDialogSize, savedGlobalFlags] = await Promise.all([
+    const [manifestResponse, readMessages, readOnly, savedStopSkipAtGhostAction, savedContinueVoice, savedBgm, savedVoice, savedEffect, savedBacklogPosition, savedBacklogSize, savedRenderScale, savedDisplayMode, savedTextSpeed, savedTextboxTransparency, savedGameFont, savedSettingsSize, savedSettingsPosition, savedSaveDialogSize, savedGlobalFlags] = await Promise.all([
       api('/api/manifest'),
       listReadMessages().catch(() => []),
       getSetting('skipReadOnly', true).catch(() => true),
       getSetting('stopSkipAtGhostAction', true).catch(() => true),
       getSetting('continueVoice', true).catch(() => true),
-      getSetting('bgmVolume', 65).catch(() => 65),
+      getSetting('bgmVolume', DEFAULT_SETTINGS.bgmVolume).catch(() => DEFAULT_SETTINGS.bgmVolume),
       getSetting('voiceVolume', 100).catch(() => 100),
-      getSetting('effectVolume', 100).catch(() => 100),
+      getSetting('effectVolume', DEFAULT_SETTINGS.effectVolume).catch(() => DEFAULT_SETTINGS.effectVolume),
       getSetting('backlogPosition', { x: 0.5, y: 9 / 38 }).catch(() => ({ x: 0.5, y: 9 / 38 })),
       getSetting('backlogSize', null).catch(() => null),
       getSetting('renderScale', 1).catch(() => 1),
@@ -2168,6 +2194,7 @@ async function bootstrap() {
       getSetting('textboxTransparency', DEFAULT_SETTINGS.textboxTransparency).catch(() => DEFAULT_SETTINGS.textboxTransparency),
       getSetting('gameFont', DEFAULT_SETTINGS.gameFont).catch(() => DEFAULT_SETTINGS.gameFont),
       getSetting('settingsSize', null).catch(() => null),
+      getSetting('settingsPosition', null).catch(() => null),
       getSetting('saveDialogSizeV2', null).catch(() => null),
       getSetting('globalFlags', null).catch(() => null),
     ]);
@@ -2196,6 +2223,12 @@ async function bootstrap() {
       runtime.settingsSize = {
         width: Math.min(.96, Math.max(.3, savedSettingsSize.width)),
         height: Math.min(.96, Math.max(.3, savedSettingsSize.height)),
+      };
+    }
+    if (savedSettingsPosition && Number.isFinite(savedSettingsPosition.x) && Number.isFinite(savedSettingsPosition.y)) {
+      runtime.settingsPosition = {
+        x: Math.min(1, Math.max(0, savedSettingsPosition.x)),
+        y: Math.min(1, Math.max(0, savedSettingsPosition.y)),
       };
     }
     if (savedSaveDialogSize && Number.isFinite(savedSaveDialogSize.width) && Number.isFinite(savedSaveDialogSize.height)) {
@@ -2486,17 +2519,49 @@ function finishBacklogDrag(event) {
 }
 backlogHeader.addEventListener('pointerup', finishBacklogDrag);
 backlogHeader.addEventListener('pointercancel', finishBacklogDrag);
+const settingsHeader = settingsPopup.querySelector('header');
+let settingsDrag = null;
+settingsHeader.addEventListener('pointerdown', event => {
+  if (event.button !== 0 || event.target.closest('button')) return;
+  settingsDrag = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    left: settingsPopup.offsetLeft,
+    top: settingsPopup.offsetTop,
+  };
+  settingsHeader.setPointerCapture(event.pointerId);
+  event.preventDefault();
+});
+settingsHeader.addEventListener('pointermove', event => {
+  if (!settingsDrag || settingsDrag.pointerId !== event.pointerId) return;
+  const maxLeft = Math.max(0, window.innerWidth - settingsPopup.offsetWidth);
+  const maxTop = Math.max(0, window.innerHeight - settingsPopup.offsetHeight);
+  settingsPopup.style.left = `${Math.min(maxLeft, Math.max(0, settingsDrag.left + event.clientX - settingsDrag.startX))}px`;
+  settingsPopup.style.top = `${Math.min(maxTop, Math.max(0, settingsDrag.top + event.clientY - settingsDrag.startY))}px`;
+});
+function finishSettingsDrag(event) {
+  if (!settingsDrag || settingsDrag.pointerId !== event.pointerId) return;
+  settingsDrag = null;
+  saveSettingsPosition();
+}
+settingsHeader.addEventListener('pointerup', finishSettingsDrag);
+settingsHeader.addEventListener('pointercancel', finishSettingsDrag);
 window.addEventListener('pointerup', () => {
   if (!backlogPopup.hidden && !backlogDrag) {
     saveBacklogSize();
     applyBacklogPosition();
   }
-  if (!settingsPopup.hidden) saveSettingsSize();
+  if (!settingsPopup.hidden) {
+    saveSettingsSize();
+    if (!settingsDrag) saveSettingsPosition();
+  }
   if (saveDialog.open) saveSaveDialogSize();
 });
 window.addEventListener('resize', () => {
   applyBacklogPosition();
   applySettingsSize();
+  applySettingsPosition();
   applySaveDialogSize();
 });
 saveDialog.addEventListener('close', () => {
