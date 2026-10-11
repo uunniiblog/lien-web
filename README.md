@@ -1,5 +1,7 @@
 # Lien Web Browser Port.
 
+[English](README.md) | [日本語](README.ja.md)
+
 Reimplementation of the game **Lien ～終わらない君の唄～** engine as a web port.
 It reads the original installed archives and raw game CD image without changing or copying them.
 
